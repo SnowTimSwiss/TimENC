@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Tuple, Optional
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from argon2.low_level import hash_secret_raw, Type
+import stat
+import errno
 
 # ---------------------------
 # Core crypto / file helpers
@@ -16,14 +18,19 @@ from argon2.low_level import hash_secret_raw, Type
 MAGIC = b"TIMENC"
 VERSION = 2
 APP_VERSION = "1.0.0"  # Application version (displayed in the GUI)
-ARGON2_TIME = 3
-ARGON2_MEMORY_KIB = 65536
+
+# --- Hardened Argon2 defaults (can be tuned further depending on hardware) ---
+ARGON2_TIME = 4
+ARGON2_MEMORY_KIB = 131072  # 128 MiB
 ARGON2_PARALLELISM = 4
 KEY_LEN = 32
 SALT_SIZE = 16
 NONCE_SIZE = 12
 
 def derive_key(password: bytes, salt: bytes, time_cost: int, memory_kib: int, parallelism: int, keyfile_bytes: Optional[bytes] = None) -> bytes:
+    """
+    Derive a key using Argon2id. If keyfile_bytes is provided, it is mixed into the password.
+    """
     if keyfile_bytes:
         password = password + b"::KEYFILE::" + keyfile_bytes
     return hash_secret_raw(
@@ -41,28 +48,143 @@ def _unpack_u16(b: bytes) -> int: return struct.unpack(">H", b)[0]
 def _pack_u32(n: int) -> bytes: return struct.pack(">I", n)
 def _unpack_u32(b: bytes) -> int: return struct.unpack(">I", b)[0]
 
+# ---------------------------
+# Safe atomic write helpers
+# ---------------------------
+def atomic_write_bytes(final_path: Path, data: bytes, mode: int = 0o600) -> None:
+    """
+    Atomically write bytes to final_path: write into a temporary file in same directory,
+    set secure permissions, fsync, then os.replace to final path.
+    Raises FileExistsError if final_path already exists.
+    """
+    final_dir = final_path.parent
+    final_dir.mkdir(parents=True, exist_ok=True)
+    if final_path.exists():
+        raise FileExistsError(f"Zieldatei existiert bereits: {final_path}")
+    # create temp in same directory to allow atomic os.replace on same FS
+    fd, tmp = tempfile.mkstemp(dir=str(final_dir))
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, str(final_path))
+    finally:
+        # cleanup if replace failed and tmp still exists
+        try:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        except Exception:
+            pass
+
+def atomic_write_bytes_allow_overwrite(final_path: Path, data: bytes, mode: int = 0o600) -> None:
+    """
+    Like atomic_write_bytes but allows overwriting existing file (used for temp outputs).
+    """
+    final_dir = final_path.parent
+    final_dir.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(final_dir))
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, str(final_path))
+    finally:
+        try:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        except Exception:
+            pass
+
+def atomic_write_fileobj(final_path: Path, fileobj, mode: int = 0o600) -> None:
+    """
+    Atomically write a file-like object's bytes (fileobj should be at position 0).
+    """
+    final_dir = final_path.parent
+    final_dir.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(final_dir))
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "wb") as f:
+            fileobj.seek(0)
+            while True:
+                chunk = fileobj.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, str(final_path))
+    finally:
+        try:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        except Exception:
+            pass
+
+# ---------------------------
+# Tar helpers (creation + safe extract)
+# ---------------------------
 def _make_tar_if_needed(path: Path) -> Tuple[Path, bool]:
+    """
+    If path is a file -> return it (tmp_created False).
+    If directory -> create a tar in tmp file and return tmp Path (tmp_created True).
+    Tar creation avoids dereferencing symlinks (safer).
+    """
     if path.is_file():
         return path, False
-    fd, tmp = tempfile.mkstemp(suffix=".tar")
-    os.close(fd)
+    final_dir = Path(tempfile.mkdtemp())
+    tmp = final_dir / f"{path.name}.tar"
     try:
-        with tarfile.open(tmp, "w") as tar:
-            tar.add(str(path), arcname=path.name)
+        # do not dereference symlinks - include them as links
+        with tarfile.open(str(tmp), "w") as tar:
+            tar.add(str(path), arcname=path.name, recursive=True)
     except Exception:
         try:
-            os.remove(tmp)
+            os.remove(str(tmp))
         except Exception:
             pass
         raise
-    return Path(tmp), True
+    return tmp, True
 
+def _is_within_directory(directory: str, target: str) -> bool:
+    abs_directory = os.path.abspath(directory)
+    abs_target = os.path.abspath(target)
+    try:
+        return os.path.commonpath([abs_directory]) == os.path.commonpath([abs_directory, abs_target])
+    except Exception:
+        return False
+
+def safe_extract(tar: tarfile.TarFile, path: str = ".") -> None:
+    """
+    Extract tar file safely, preventing path traversal (Tar-Slip).
+    """
+    for member in tar.getmembers():
+        member_path = os.path.join(path, member.name)
+        if not _is_within_directory(path, member_path):
+            raise Exception("Unzulässiger Pfad in Archiv (Path Traversal)")
+    tar.extractall(path=path)
+
+# ---------------------------
+# Secure delete (best-effort)
+# ---------------------------
 def secure_delete(path: Path):
+    """
+    Overwrite file contents blockwise and unlink. Note: not guaranteed on SSDs/filesystems with snapshots.
+    """
     try:
         length = path.stat().st_size
         with open(path, "r+b") as f:
             f.seek(0)
-            f.write(os.urandom(length))
+            remaining = length
+            block = 65536
+            while remaining > 0:
+                towrite = os.urandom(min(block, remaining))
+                f.write(towrite)
+                remaining -= len(towrite)
             f.flush()
             os.fsync(f.fileno())
     except Exception:
@@ -72,6 +194,9 @@ def secure_delete(path: Path):
     except Exception:
         pass
 
+# ---------------------------
+# Encrypt / Decrypt
+# ---------------------------
 def encrypt(input_path: str, output_file: str, password: str, keyfile_path: Optional[str] = None) -> str:
     inp = Path(input_path)
     if not inp.exists():
@@ -80,30 +205,51 @@ def encrypt(input_path: str, output_file: str, password: str, keyfile_path: Opti
     original_name = file_to_encrypt.name
     is_dir = 1 if tmp_created else 0
     try:
+        # read plaintext as bytes (be mindful: this loads into RAM)
         data = file_to_encrypt.read_bytes()
         salt = os.urandom(SALT_SIZE)
         keyfile_bytes = None
         if keyfile_path:
             keyfile_bytes = Path(keyfile_path).read_bytes()
+        # derive key
         key = derive_key(password.encode("utf-8"), salt, ARGON2_TIME, ARGON2_MEMORY_KIB, ARGON2_PARALLELISM, keyfile_bytes)
-        aead = ChaCha20Poly1305(key)
+        # make mutable for zeroize
+        key_ba = bytearray(key)
+        # prepare nonce
         nonce = os.urandom(NONCE_SIZE)
-        ciphertext = aead.encrypt(nonce, data, None)
-        with open(output_file, "wb") as f:
-            f.write(MAGIC)
-            f.write(bytes([VERSION]))
-            f.write(bytes([is_dir]))
-            name_bytes = original_name.encode("utf-8")
-            if len(name_bytes) > 65535:
-                raise ValueError("Dateiname zu lang")
-            f.write(_pack_u16(len(name_bytes)))
-            f.write(name_bytes)
-            f.write(salt)
-            f.write(_pack_u32(ARGON2_TIME))
-            f.write(_pack_u32(ARGON2_MEMORY_KIB))
-            f.write(bytes([ARGON2_PARALLELISM]))
-            f.write(nonce)
-            f.write(ciphertext)
+
+        # prepare header bytes (everything written BEFORE ciphertext) - this will be AAD
+        header = bytearray()
+        header += MAGIC
+        header += bytes([VERSION])
+        header += bytes([is_dir])
+        name_bytes = original_name.encode("utf-8")
+        if len(name_bytes) > 65535:
+            raise ValueError("Dateiname zu lang")
+        header += _pack_u16(len(name_bytes))
+        header += name_bytes
+        header += salt
+        header += _pack_u32(ARGON2_TIME)
+        header += _pack_u32(ARGON2_MEMORY_KIB)
+        header += bytes([ARGON2_PARALLELISM])
+        header += nonce
+
+        try:
+            aead = ChaCha20Poly1305(bytes(key_ba))
+            # encrypt using header as AAD
+            ciphertext = aead.encrypt(nonce, data, bytes(header))
+        finally:
+            # zeroize key
+            for i in range(len(key_ba)):
+                key_ba[i] = 0
+            del key_ba
+
+        # build final bytes to write: header + ciphertext
+        final_bytes = bytes(header) + ciphertext
+
+        outp = Path(output_file)
+        # Atomic write, refuse to overwrite existing file to avoid accidental data loss
+        atomic_write_bytes(outp, final_bytes, mode=0o600)
         return f"Verschlüsselt: {output_file}"
     finally:
         if tmp_created:
@@ -111,6 +257,18 @@ def encrypt(input_path: str, output_file: str, password: str, keyfile_path: Opti
                 secure_delete(file_to_encrypt)
             except Exception:
                 pass
+        # attempt to zeroize plaintext if possible
+        try:
+            if 'data' in locals():
+                if isinstance(data, bytes):
+                    ba = bytearray(data)
+                    for i in range(len(ba)):
+                        ba[i] = 0
+                    del ba
+                else:
+                    del data
+        except Exception:
+            pass
 
 def decrypt(input_file: str, out_dir: str, password: str, keyfile_path: Optional[str] = None) -> str:
     enc = Path(input_file)
@@ -133,53 +291,111 @@ def decrypt(input_file: str, out_dir: str, password: str, keyfile_path: Optional
     memory_kib = _unpack_u32(data[pos : pos + 4]); pos += 4
     parallelism = data[pos]; pos += 1
     nonce = data[pos : pos + NONCE_SIZE]; pos += NONCE_SIZE
+
+    # reconstruct header bytes (exactly the bytes used as AAD)
+    header_bytes = data[:pos]
     ciphertext = data[pos:]
     keyfile_bytes = None
     if keyfile_path:
         keyfile_bytes = Path(keyfile_path).read_bytes()
+
     key = derive_key(password.encode("utf-8"), salt, time_cost, memory_kib, parallelism, keyfile_bytes)
-    aead = ChaCha20Poly1305(key)
+    key_ba = bytearray(key)
     try:
-        plaintext = aead.decrypt(nonce, ciphertext, None)
-    except Exception:
-        raise ValueError("Entschlüsselung fehlgeschlagen - falsches Passwort/Keyfile")
+        aead = ChaCha20Poly1305(bytes(key_ba))
+        try:
+            plaintext = aead.decrypt(nonce, ciphertext, bytes(header_bytes))
+        except Exception:
+            # generic message so as not to reveal whether password or file was wrong
+            raise ValueError("Entschlüsselung fehlgeschlagen - falsches Passwort/Keyfile oder manipulierte Datei")
+    finally:
+        for i in range(len(key_ba)):
+            key_ba[i] = 0
+        del key_ba
+
     outp = Path(out_dir)
     outp.mkdir(parents=True, exist_ok=True)
+
+    # write plaintext to temp file then place or extract safely
     fd, tmp = tempfile.mkstemp()
     os.close(fd)
     tmp_path = Path(tmp)
     try:
         tmp_path.write_bytes(plaintext)
+        # try to zeroize plaintext copy asap
+        try:
+            if isinstance(plaintext, bytes):
+                ba = bytearray(plaintext)
+                for i in range(len(ba)):
+                    ba[i] = 0
+                del ba
+        except Exception:
+            pass
+
         if version >= 2 and is_dir == 1:
+            # safe extract
             with tarfile.open(str(tmp_path), "r") as tar:
-                tar.extractall(path=str(outp))
+                safe_extract(tar, str(outp))
             return f"Entschlüsselt und extrahiert nach: {outp}"
         elif version >= 2 and original_name:
             target = outp / original_name
-            target.write_bytes(plaintext)
+            # atomic write, but allow overwrite if file not present -> prevent accidental overwrite
+            if target.exists():
+                raise FileExistsError(f"Zieldatei existiert bereits: {target}")
+            atomic_write_bytes(target, tmp_path.read_bytes(), mode=0o600)
             return f"Entschlüsselt: {target}"
         else:
-            if tarfile.is_tarfile(str(tmp_path)):
-                with tarfile.open(str(tmp_path), "r") as tar:
-                    tar.extractall(path=str(outp))
-                return f"Entschlüsselt und extrahiert nach: {outp}"
-            else:
-                target = outp / "decrypted"
-                target.write_bytes(plaintext)
-                return f"Entschlüsselt: {target}"
+            # guess: if tmp_path is a tar, extract, else write as 'decrypted'
+            try:
+                if tarfile.is_tarfile(str(tmp_path)):
+                    with tarfile.open(str(tmp_path), "r") as tar:
+                        safe_extract(tar, str(outp))
+                    return f"Entschlüsselt und extrahiert nach: {outp}"
+            except Exception:
+                # fall through to writing raw
+                pass
+            target = outp / "decrypted"
+            if target.exists():
+                raise FileExistsError(f"Zieldatei existiert bereits: {target}")
+            atomic_write_bytes(target, tmp_path.read_bytes(), mode=0o600)
+            return f"Entschlüsselt: {target}"
     finally:
         try:
             secure_delete(tmp_path)
         except Exception:
             pass
 
+# ---------------------------
+# Keyfile generation (secure)
+# ---------------------------
 def generate_keyfile(path: str, size: int = 32) -> str:
     key_material = secrets.token_bytes(size)
-    Path(path).write_bytes(key_material)
+    # create file securely, refuse overwrite
+    p = Path(path)
+    if p.exists():
+        raise FileExistsError(f"Keyfile existiert bereits: {path}")
+    # use O_EXCL to avoid races when creating
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    fd = os.open(str(p), flags, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(key_material)
+            f.flush()
+            os.fsync(f.fileno())
+    finally:
+        # zeroize key_material if possible
+        try:
+            km = bytearray(key_material)
+            for i in range(len(km)):
+                km[i] = 0
+            del km
+        except Exception:
+            pass
     return f"Keyfile erstellt: {path} ({size} Bytes)"
 
 # ---------------------------
 # GUI (CustomTkinter)
+# (unchanged except for minor error handling differences)
 # ---------------------------
 try:
     import customtkinter as ctk
@@ -540,6 +756,9 @@ class ModernTimencGUI:
                 entry.insert(0, path)
                 messagebox.showinfo("Keyfile erstellt", result)
                 self.set_status("✅ Keyfile erfolgreich generiert")
+            except FileExistsError:
+                messagebox.showerror("Fehler", "Keyfile existiert bereits. Bitte wählen Sie einen anderen Namen.")
+                self.set_status("❌ Fehler beim Generieren des Keyfiles")
             except Exception as e:
                 messagebox.showerror("Fehler", f"Keyfile konnte nicht erstellt werden: {e}")
                 self.set_status("❌ Fehler beim Generieren des Keyfiles")
@@ -579,13 +798,17 @@ class ModernTimencGUI:
             self.set_status("⏳ Verschlüssele...")
             self.encrypt_btn.configure(state="disabled", text="Verschlüssele...")
             self.root.update()
-            result = encrypt(self.encrypt_input_entry.get().strip(), self.encrypt_output_entry.get().strip(), self.encrypt_pwd_entry.get(), self.encrypt_keyfile_entry.get().strip() or None)
-            messagebox.showinfo("Erfolg", result)
-            self.set_status("✅ Verschlüsselung erfolgreich")
-            self.encrypt_pwd_entry.delete(0, tk.END)
-        except Exception as e:
-            messagebox.showerror("Fehler", f"Verschlüsselung fehlgeschlagen: {e}")
-            self.set_status("❌ Fehler bei der Verschlüsselung")
+            try:
+                result = encrypt(self.encrypt_input_entry.get().strip(), self.encrypt_output_entry.get().strip(), self.encrypt_pwd_entry.get(), self.encrypt_keyfile_entry.get().strip() or None)
+                messagebox.showinfo("Erfolg", result)
+                self.set_status("✅ Verschlüsselung erfolgreich")
+                self.encrypt_pwd_entry.delete(0, tk.END)
+            except FileExistsError as fe:
+                messagebox.showerror("Fehler", str(fe))
+                self.set_status("❌ Fehler bei der Verschlüsselung")
+            except Exception:
+                messagebox.showerror("Fehler", "Verschlüsselung fehlgeschlagen.")
+                self.set_status("❌ Fehler bei der Verschlüsselung")
         finally:
             self.encrypt_btn.configure(state="normal", text="🚀 Verschlüsseln")
 
@@ -596,13 +819,17 @@ class ModernTimencGUI:
             self.set_status("⏳ Entschlüssele...")
             self.decrypt_btn.configure(state="disabled", text="Entschlüssele...")
             self.root.update()
-            result = decrypt(self.decrypt_input_entry.get().strip(), self.decrypt_output_entry.get().strip(), self.decrypt_pwd_entry.get(), self.decrypt_keyfile_entry.get().strip() or None)
-            messagebox.showinfo("Erfolg", result)
-            self.set_status("✅ Entschlüsselung erfolgreich")
-            self.decrypt_pwd_entry.delete(0, tk.END)
-        except Exception as e:
-            messagebox.showerror("Fehler", f"Entschlüsselung fehlgeschlagen: {e}")
-            self.set_status("❌ Fehler bei der Entschlüsselung")
+            try:
+                result = decrypt(self.decrypt_input_entry.get().strip(), self.decrypt_output_entry.get().strip(), self.decrypt_pwd_entry.get(), self.decrypt_keyfile_entry.get().strip() or None)
+                messagebox.showinfo("Erfolg", result)
+                self.set_status("✅ Entschlüsselung erfolgreich")
+                self.decrypt_pwd_entry.delete(0, tk.END)
+            except FileExistsError as fe:
+                messagebox.showerror("Fehler", str(fe))
+                self.set_status("❌ Fehler bei der Entschlüsselung")
+            except Exception:
+                messagebox.showerror("Fehler", "Entschlüsselung fehlgeschlagen.")
+                self.set_status("❌ Fehler bei der Entschlüsselung")
         finally:
             self.decrypt_btn.configure(state="normal", text="🚀 Entschlüsseln")
 
@@ -622,9 +849,16 @@ class ModernTimencGUI:
         if not out:
             messagebox.showerror("Fehler", "Bitte Ausgabepfad angeben")
             return False
+        if Path(out).exists():
+            messagebox.showerror("Fehler", "Ausgabedatei existiert bereits (verhindert Überschreiben). Bitte wählen Sie einen anderen Namen oder löschen Sie die bestehende Datei.")
+            return False
         if not pwd:
             messagebox.showerror("Fehler", "Bitte Passwort eingeben")
             return False
+        if len(pwd) < 8:
+            # nur Hinweis, nicht erzwingen - besser Hinweis zur Stärke
+            if not messagebox.askyesno("Schwaches Passwort", "Das Passwort ist kurz (<8). Fortfahren?"):
+                return False
         return True
 
     def validate_decrypt_inputs(self) -> bool:
@@ -665,5 +899,5 @@ if __name__ == "__main__":
         app = ModernTimencGUI()
         app.run()
     except Exception as e:
-        print(f"Fehler beim Starten der Anwendung: {e}")
+        print("Fehler beim Starten der Anwendung.")
         sys.exit(1)
