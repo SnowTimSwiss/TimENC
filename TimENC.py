@@ -10,7 +10,9 @@ from typing import Tuple, Optional
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from argon2.low_level import hash_secret_raw, Type
 
-# Konfiguration
+# ---------------------------
+# Core crypto / file helpers
+# ---------------------------
 MAGIC = b"TIMENC"
 VERSION = 2
 ARGON2_TIME = 3
@@ -20,7 +22,6 @@ KEY_LEN = 32
 SALT_SIZE = 16
 NONCE_SIZE = 12
 
-# --- Kernfunktionen (unverändert) ---
 def derive_key(password: bytes, salt: bytes, time_cost: int, memory_kib: int, parallelism: int, keyfile_bytes: Optional[bytes] = None) -> bytes:
     if keyfile_bytes:
         password = password + b"::KEYFILE::" + keyfile_bytes
@@ -34,17 +35,10 @@ def derive_key(password: bytes, salt: bytes, time_cost: int, memory_kib: int, pa
         type=Type.ID,
     )
 
-def _pack_u16(n: int) -> bytes:
-    return struct.pack(">H", n)
-
-def _unpack_u16(b: bytes) -> int:
-    return struct.unpack(">H", b)[0]
-
-def _pack_u32(n: int) -> bytes:
-    return struct.pack(">I", n)
-
-def _unpack_u32(b: bytes) -> int:
-    return struct.unpack(">I", b)[0]
+def _pack_u16(n: int) -> bytes: return struct.pack(">H", n)
+def _unpack_u16(b: bytes) -> int: return struct.unpack(">H", b)[0]
+def _pack_u32(n: int) -> bytes: return struct.pack(">I", n)
+def _unpack_u32(b: bytes) -> int: return struct.unpack(">I", b)[0]
 
 def _make_tar_if_needed(path: Path) -> Tuple[Path, bool]:
     if path.is_file():
@@ -77,7 +71,7 @@ def secure_delete(path: Path):
     except Exception:
         pass
 
-def encrypt(input_path: str, output_file: str, password: str, keyfile_path: Optional[str] = None) -> None:
+def encrypt(input_path: str, output_file: str, password: str, keyfile_path: Optional[str] = None) -> str:
     inp = Path(input_path)
     if not inp.exists():
         raise FileNotFoundError(f"Eingabe nicht gefunden: {input_path}")
@@ -117,7 +111,7 @@ def encrypt(input_path: str, output_file: str, password: str, keyfile_path: Opti
             except Exception:
                 pass
 
-def decrypt(input_file: str, out_dir: str, password: str, keyfile_path: Optional[str] = None) -> None:
+def decrypt(input_file: str, out_dir: str, password: str, keyfile_path: Optional[str] = None) -> str:
     enc = Path(input_file)
     if not enc.exists():
         raise FileNotFoundError(f"Eingabedatei nicht gefunden: {input_file}")
@@ -178,12 +172,14 @@ def decrypt(input_file: str, out_dir: str, password: str, keyfile_path: Optional
         except Exception:
             pass
 
-def generate_keyfile(path: str, size: int = 32):
+def generate_keyfile(path: str, size: int = 32) -> str:
     key_material = secrets.token_bytes(size)
     Path(path).write_bytes(key_material)
     return f"Keyfile erstellt: {path} ({size} Bytes)"
 
-# --- GUI (CustomTkinter) ---
+# ---------------------------
+# GUI (CustomTkinter)
+# ---------------------------
 try:
     import customtkinter as ctk
     from tkinter import filedialog, messagebox
@@ -205,66 +201,63 @@ class ModernTimencGUI:
         # Appearance
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("dark-blue")
-        # Root
+
+        # Root window: less wide, taller
         if DND_AVAILABLE and TkinterDnD:
             self.root = TkinterDnD.Tk()
         else:
             self.root = ctk.CTk()
         self.root.title("Timenc - Sichere Verschlüsselung")
-        # Weniger breite, zentrierte Content-Column: Fensterbreite moderat, Inhalt zentriert
-        self.root.geometry("980x600")
-        self.root.minsize(860, 520)
+        self.root.geometry("820x720")        # weniger breit, dafür höher
+        self.root.minsize(760, 640)
 
-        # Root background hell/dunkel angleichen
-        main_bg = "#141414"
+        # background to avoid white edges
+        self.main_bg = "#111213"
         try:
-            self.root.configure(bg=main_bg)
+            self.root.configure(bg=self.main_bg)
         except Exception:
             pass
 
-        # Versuche Windows immersive dark title bar (opt.)
         self._force_dark_title_bar()
 
-        # Build UI: outer grid with 3 columns, center column fixed width content
+        # Layout: centered, fixed content width for nicer column
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_columnconfigure(1, weight=0)
         self.root.grid_columnconfigure(2, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
 
-        content_width = 820  # feste Breite für zentriertes, weniger weites Layout
-
-        content_frame = ctk.CTkFrame(self.root, width=content_width, fg_color=main_bg, corner_radius=10)
+        content_width = 720  # narrower content column
+        content_frame = ctk.CTkFrame(self.root, width=content_width, fg_color=self.main_bg, corner_radius=12)
         content_frame.grid(row=0, column=1, sticky="nsew", pady=12)
-        content_frame.grid_propagate(False)  # verhindert dass der Frame seine Größe ändert
+        content_frame.grid_propagate(False)
         content_frame.grid_columnconfigure(0, weight=1)
         content_frame.grid_rowconfigure(2, weight=1)
 
-        # Header
+        # Header (clean)
         header = ctk.CTkFrame(content_frame, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=10, pady=(8,6))
+        header.grid(row=0, column=0, sticky="ew", padx=12, pady=(10,4))
         header.grid_columnconfigure(0, weight=1)
-        title = ctk.CTkLabel(header, text="🔒 Timenc - Sichere Dateiverschlüsselung", font=ctk.CTkFont(size=18, weight="bold"))
+        title = ctk.CTkLabel(header, text="🔒 Timenc — Sichere Dateiverschlüsselung", font=ctk.CTkFont(size=20, weight="bold"))
         title.grid(row=0, column=0, sticky="w")
-        subtitle = ctk.CTkLabel(header, text="Verschlüsseln und entschlüsseln Sie Dateien sicher mit Passwort und Keyfile", font=ctk.CTkFont(size=11), text_color="gray")
-        subtitle.grid(row=1, column=0, sticky="w", pady=(4,0))
+        subtitle = ctk.CTkLabel(header, text="Verschlüsseln und entschlüsseln Sie Dateien sicher mit Passwort und Keyfile", font=ctk.CTkFont(size=12), text_color="gray")
+        subtitle.grid(row=1, column=0, sticky="w", pady=(6,0))
 
-        # Tabview (zentriert in center column)
-        self.tabview = ctk.CTkTabview(content_frame, width=content_width-20, corner_radius=8, fg_color="#0f0f0f")
-        self.tabview.grid(row=1, column=0, padx=10, pady=(6,8), sticky="nsew")
-        self.tabview.grid_columnconfigure(0, weight=1)
+        # Tabview (slim)
+        self.tabview = ctk.CTkTabview(content_frame, width=content_width-20, corner_radius=10, fg_color="#0b0b0c")
+        self.tabview.grid(row=1, column=0, padx=12, pady=(8,10), sticky="nsew")
         self.encrypt_tab = self.tabview.add("🔒 Verschlüsseln")
         self.decrypt_tab = self.tabview.add("🔓 Entschlüsseln")
 
-        # Build tabs
-        self._build_encrypt_tab(content_width-40)
-        self._build_decrypt_tab(content_width-40)
+        # build UI
+        self._build_encrypt_tab(content_width-36)
+        self._build_decrypt_tab(content_width-36)
 
-        # Status bar (flach)
-        status = ctk.CTkFrame(content_frame, fg_color="#0f0f0f", corner_radius=6, height=36)
-        status.grid(row=2, column=0, padx=10, pady=(0,10), sticky="ew")
+        # status bar
+        status = ctk.CTkFrame(content_frame, fg_color="#0b0b0c", corner_radius=8, height=38)
+        status.grid(row=2, column=0, padx=12, pady=(0,12), sticky="ew")
         status.grid_propagate(False)
-        self.status_label = ctk.CTkLabel(status, text="✅ Bereit - Dateien per Drag & Drop in Eingabefelder", font=ctk.CTkFont(size=11), text_color="lightblue")
-        self.status_label.grid(row=0, column=0, sticky="w", padx=8, pady=6)
+        self.status_label = ctk.CTkLabel(status, text="✅ Bereit — Dateien per Drag & Drop in Eingabefelder", font=ctk.CTkFont(size=11), text_color="lightblue")
+        self.status_label.grid(row=0, column=0, sticky="w", padx=10, pady=6)
 
     def _force_dark_title_bar(self):
         try:
@@ -277,151 +270,152 @@ class ModernTimencGUI:
         except Exception:
             pass
 
-    # --- Encrypt Tab ---
+    # -----------------------
+    # Encrypt tab (wider entries)
+    # -----------------------
     def _build_encrypt_tab(self, inner_width: int):
         tab = self.encrypt_tab
         tab.grid_columnconfigure(0, weight=1)
         padx = 12
-        pady = 6
+        pady = 8
 
-        # Input area (large field)
-        frame_in = ctk.CTkFrame(tab, fg_color="#171717", corner_radius=8)
-        frame_in.grid(row=0, column=0, sticky="ew", padx=padx, pady=(pady, 8))
-        frame_in.grid_columnconfigure(0, weight=1)
+        area = ctk.CTkFrame(tab, fg_color="#151516", corner_radius=10)
+        area.grid(row=0, column=0, sticky="ew", padx=padx, pady=(pady,10))
+        area.grid_columnconfigure(0, weight=1)
 
-        lbl = ctk.CTkLabel(frame_in, text="📁 Datei/Ordner zum Verschlüsseln", font=ctk.CTkFont(size=13, weight="bold"))
-        lbl.grid(row=0, column=0, sticky="w", padx=10, pady=(8,4))
-        info = ctk.CTkLabel(frame_in, text="⤵️ Ziehen Sie eine Datei oder einen Ordner hierher", font=ctk.CTkFont(size=10), text_color="lightblue")
-        info.grid(row=1, column=0, sticky="w", padx=10, pady=(0,8))
+        lbl = ctk.CTkLabel(area, text="📁 Datei / Ordner zum Verschlüsseln", font=ctk.CTkFont(size=13, weight="bold"))
+        lbl.grid(row=0, column=0, sticky="w", padx=12, pady=(10,2))
+        sub = ctk.CTkLabel(area, text="⤵️ Ziehen Sie eine Datei oder einen Ordner hierher", font=ctk.CTkFont(size=10), text_color="lightblue")
+        sub.grid(row=1, column=0, sticky="w", padx=12, pady=(0,8))
 
-        inrow = ctk.CTkFrame(frame_in, fg_color="transparent")
-        inrow.grid(row=2, column=0, sticky="ew", padx=10, pady=(0,12))
+        inrow = ctk.CTkFrame(area, fg_color="transparent")
+        inrow.grid(row=2, column=0, sticky="ew", padx=12, pady=(0,12))
         inrow.grid_columnconfigure(0, weight=1)
-        self.encrypt_input_entry = ctk.CTkEntry(inrow, placeholder_text="Pfad zur Datei oder zum Ordner...", height=44, fg_color="#2b2b2b")
+        # make input field a bit larger
+        self.encrypt_input_entry = ctk.CTkEntry(inrow, placeholder_text="Pfad zur Datei oder zum Ordner...", height=50, fg_color="#2a2a2b")
         self.encrypt_input_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        ctk.CTkButton(inrow, text="Durchsuchen", width=120, height=40, command=self.choose_encrypt_input).grid(row=0, column=1)
+        ctk.CTkButton(inrow, text="Durchsuchen", width=120, height=42, command=self.choose_encrypt_input).grid(row=0, column=1)
 
-        # Output / Password / Keyfile stacked but wider
-        frame_opts = ctk.CTkFrame(tab, fg_color="transparent")
-        frame_opts.grid(row=1, column=0, sticky="ew", padx=padx, pady=(2,8))
-        frame_opts.grid_columnconfigure(0, weight=1)
+        opts = ctk.CTkFrame(tab, fg_color="transparent")
+        opts.grid(row=1, column=0, sticky="ew", padx=padx, pady=(2,10))
+        opts.grid_columnconfigure(0, weight=1)
 
-        # Ausgabedatei
-        outlbl = ctk.CTkLabel(frame_opts, text="💾 Ausgabedatei:", font=ctk.CTkFont(size=11, weight="bold"))
-        outlbl.grid(row=0, column=0, sticky="w", padx=6, pady=(4,2))
-        outrow = ctk.CTkFrame(frame_opts, fg_color="transparent")
-        outrow.grid(row=1, column=0, sticky="ew", padx=6)
+        # Ausgabedatei (wider)
+        outlbl = ctk.CTkLabel(opts, text="💾 Ausgabedatei:", font=ctk.CTkFont(size=11, weight="bold"))
+        outlbl.grid(row=0, column=0, sticky="w", padx=8, pady=(6,2))
+        outrow = ctk.CTkFrame(opts, fg_color="transparent")
+        outrow.grid(row=1, column=0, sticky="ew", padx=8)
         outrow.grid_columnconfigure(0, weight=1)
-        self.encrypt_output_entry = ctk.CTkEntry(outrow, height=40)
+        self.encrypt_output_entry = ctk.CTkEntry(outrow, height=44)
         self.encrypt_output_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        ctk.CTkButton(outrow, text="Durchsuchen", width=120, height=36, command=self.choose_encrypt_output).grid(row=0, column=1)
+        ctk.CTkButton(outrow, text="Durchsuchen", width=120, height=40, command=self.choose_encrypt_output).grid(row=0, column=1)
 
-        # Password
-        pwlabel = ctk.CTkLabel(frame_opts, text="🔑 Passwort:", font=ctk.CTkFont(size=11, weight="bold"))
-        pwlabel.grid(row=2, column=0, sticky="w", padx=6, pady=(8,2))
-        pwrow = ctk.CTkFrame(frame_opts, fg_color="transparent")
-        pwrow.grid(row=3, column=0, sticky="ew", padx=6)
+        # Password (label for toggle: "Passwort anzeigen")
+        pwlbl = ctk.CTkLabel(opts, text="🔑 Passwort:", font=ctk.CTkFont(size=11, weight="bold"))
+        pwlbl.grid(row=2, column=0, sticky="w", padx=8, pady=(8,2))
+        pwrow = ctk.CTkFrame(opts, fg_color="transparent")
+        pwrow.grid(row=3, column=0, sticky="ew", padx=8)
         pwrow.grid_columnconfigure(0, weight=1)
-        self.encrypt_pwd_entry = ctk.CTkEntry(pwrow, show="•", height=40, placeholder_text="Passwort eingeben...")
+        self.encrypt_pwd_entry = ctk.CTkEntry(pwrow, show="•", height=44, placeholder_text="Passwort eingeben...")
         self.encrypt_pwd_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        self.encrypt_pwd_toggle = ctk.CTkButton(pwrow, text="👁️", width=60, height=36, command=lambda: self.toggle_password(self.encrypt_pwd_entry, self.encrypt_pwd_toggle))
+        # change button text to "Passwort anzeigen" / "Passwort verbergen"
+        self.encrypt_pwd_toggle = ctk.CTkButton(pwrow, text="Passwort anzeigen", width=150, height=40, command=lambda: self.toggle_password(self.encrypt_pwd_entry, self.encrypt_pwd_toggle))
         self.encrypt_pwd_toggle.grid(row=0, column=1)
 
         # Keyfile
-        kflabel = ctk.CTkLabel(frame_opts, text="🗝️ Keyfile (optional):", font=ctk.CTkFont(size=11, weight="bold"))
-        kflabel.grid(row=4, column=0, sticky="w", padx=6, pady=(8,2))
-        kfrow = ctk.CTkFrame(frame_opts, fg_color="transparent")
-        kfrow.grid(row=5, column=0, sticky="ew", padx=6, pady=(0,6))
+        kflbl = ctk.CTkLabel(opts, text="🗝️ Keyfile (optional):", font=ctk.CTkFont(size=11, weight="bold"))
+        kflbl.grid(row=4, column=0, sticky="w", padx=8, pady=(8,2))
+        kfrow = ctk.CTkFrame(opts, fg_color="transparent")
+        kfrow.grid(row=5, column=0, sticky="ew", padx=8, pady=(0,6))
         kfrow.grid_columnconfigure(0, weight=1)
-        self.encrypt_keyfile_entry = ctk.CTkEntry(kfrow, placeholder_text="Pfad zum Keyfile...", height=36)
+        self.encrypt_keyfile_entry = ctk.CTkEntry(kfrow, placeholder_text="Pfad zum Keyfile...", height=40)
         self.encrypt_keyfile_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
         kfbtns = ctk.CTkFrame(kfrow, fg_color="transparent")
         kfbtns.grid(row=0, column=1)
-        ctk.CTkButton(kfbtns, text="Wählen", width=92, height=34, command=lambda: self.choose_keyfile(self.encrypt_keyfile_entry)).grid(row=0, column=0, padx=(0,6))
-        ctk.CTkButton(kfbtns, text="Generieren", width=100, height=34, command=lambda: self.generate_keyfile(self.encrypt_keyfile_entry)).grid(row=0, column=1)
+        ctk.CTkButton(kfbtns, text="Wählen", width=100, height=36, command=lambda: self.choose_keyfile(self.encrypt_keyfile_entry)).grid(row=0, column=0, padx=(0,6))
+        ctk.CTkButton(kfbtns, text="Generieren", width=110, height=36, command=lambda: self.generate_keyfile(self.encrypt_keyfile_entry)).grid(row=0, column=1)
 
-        # Action (rechts)
+        # Action button (bigger)
         action = ctk.CTkFrame(tab, fg_color="transparent")
-        action.grid(row=2, column=0, sticky="e", padx=padx, pady=(4,10))
-        self.encrypt_btn = ctk.CTkButton(action, text="🚀 Verschlüsseln", command=self.gui_encrypt, height=44, width=200, fg_color="#1f6aa5", hover_color="#144870")
+        action.grid(row=2, column=0, sticky="e", padx=padx, pady=(6,12))
+        self.encrypt_btn = ctk.CTkButton(action, text="🚀 Verschlüsseln", command=self.gui_encrypt, height=46, width=220, fg_color="#1f6aa5", hover_color="#144870")
         self.encrypt_btn.grid(row=0, column=0)
 
-        # DnD (falls verfügbar)
+        # DnD
         if DND_AVAILABLE:
             self.encrypt_input_entry.drop_target_register(DND_FILES)
             self.encrypt_input_entry.dnd_bind('<<Drop>>', lambda e: self._on_drop_encrypt_input(e))
             self.encrypt_keyfile_entry.drop_target_register(DND_FILES)
             self.encrypt_keyfile_entry.dnd_bind('<<Drop>>', lambda e: self._on_drop_keyfile(e, self.encrypt_keyfile_entry))
 
-        # Events
+        # events
         self.encrypt_input_entry.bind("<FocusOut>", lambda e: self._autosuggest_encrypt_output())
         self.encrypt_input_entry.bind("<KeyRelease>", lambda e: self._autosuggest_encrypt_output())
 
-    # --- Decrypt Tab ---
+    # -----------------------
+    # Decrypt tab
+    # -----------------------
     def _build_decrypt_tab(self, inner_width: int):
         tab = self.decrypt_tab
         tab.grid_columnconfigure(0, weight=1)
         padx = 12
-        pady = 6
+        pady = 8
 
-        frame_in = ctk.CTkFrame(tab, fg_color="#171717", corner_radius=8)
-        frame_in.grid(row=0, column=0, sticky="ew", padx=padx, pady=(pady, 8))
-        frame_in.grid_columnconfigure(0, weight=1)
+        area = ctk.CTkFrame(tab, fg_color="#151516", corner_radius=10)
+        area.grid(row=0, column=0, sticky="ew", padx=padx, pady=(pady,10))
+        area.grid_columnconfigure(0, weight=1)
 
-        lbl = ctk.CTkLabel(frame_in, text="📄 Datei zum Entschlüsseln", font=ctk.CTkFont(size=13, weight="bold"))
-        lbl.grid(row=0, column=0, sticky="w", padx=10, pady=(8,4))
-        info = ctk.CTkLabel(frame_in, text="⤵️ Ziehen Sie die verschlüsselte Datei hierher", font=ctk.CTkFont(size=10), text_color="lightblue")
-        info.grid(row=1, column=0, sticky="w", padx=10, pady=(0,8))
+        lbl = ctk.CTkLabel(area, text="📄 Datei zum Entschlüsseln", font=ctk.CTkFont(size=13, weight="bold"))
+        lbl.grid(row=0, column=0, sticky="w", padx=12, pady=(10,2))
+        sub = ctk.CTkLabel(area, text="⤵️ Ziehen Sie die verschlüsselte Datei hierher", font=ctk.CTkFont(size=10), text_color="lightblue")
+        sub.grid(row=1, column=0, sticky="w", padx=12, pady=(0,8))
 
-        inrow = ctk.CTkFrame(frame_in, fg_color="transparent")
-        inrow.grid(row=2, column=0, sticky="ew", padx=10, pady=(0,12))
+        inrow = ctk.CTkFrame(area, fg_color="transparent")
+        inrow.grid(row=2, column=0, sticky="ew", padx=12, pady=(0,12))
         inrow.grid_columnconfigure(0, weight=1)
-        self.decrypt_input_entry = ctk.CTkEntry(inrow, placeholder_text="Pfad zur verschlüsselten Datei...", height=44, fg_color="#2b2b2b")
+        self.decrypt_input_entry = ctk.CTkEntry(inrow, placeholder_text="Pfad zur verschlüsselten Datei...", height=50, fg_color="#2a2a2b")
         self.decrypt_input_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        ctk.CTkButton(inrow, text="Durchsuchen", width=120, height=40, command=self.choose_decrypt_input).grid(row=0, column=1)
+        ctk.CTkButton(inrow, text="Durchsuchen", width=120, height=42, command=self.choose_decrypt_input).grid(row=0, column=1)
 
-        frame_opts = ctk.CTkFrame(tab, fg_color="transparent")
-        frame_opts.grid(row=1, column=0, sticky="ew", padx=padx, pady=(2,8))
-        frame_opts.grid_columnconfigure(0, weight=1)
+        opts = ctk.CTkFrame(tab, fg_color="transparent")
+        opts.grid(row=1, column=0, sticky="ew", padx=padx, pady=(2,10))
+        opts.grid_columnconfigure(0, weight=1)
 
-        # Zielordner
-        outlbl = ctk.CTkLabel(frame_opts, text="📂 Zielordner:", font=ctk.CTkFont(size=11, weight="bold"))
-        outlbl.grid(row=0, column=0, sticky="w", padx=6, pady=(4,2))
-        outrow = ctk.CTkFrame(frame_opts, fg_color="transparent")
-        outrow.grid(row=1, column=0, sticky="ew", padx=6)
+        outlbl = ctk.CTkLabel(opts, text="📂 Zielordner:", font=ctk.CTkFont(size=11, weight="bold"))
+        outlbl.grid(row=0, column=0, sticky="w", padx=8, pady=(6,2))
+        outrow = ctk.CTkFrame(opts, fg_color="transparent")
+        outrow.grid(row=1, column=0, sticky="ew", padx=8)
         outrow.grid_columnconfigure(0, weight=1)
-        self.decrypt_output_entry = ctk.CTkEntry(outrow, height=40, placeholder_text="Ordner für entschlüsselte Dateien...")
+        self.decrypt_output_entry = ctk.CTkEntry(outrow, height=44, placeholder_text="Ordner für entschlüsselte Dateien...")
         self.decrypt_output_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        ctk.CTkButton(outrow, text="Durchsuchen", width=120, height=36, command=self.choose_decrypt_output).grid(row=0, column=1)
+        ctk.CTkButton(outrow, text="Durchsuchen", width=120, height=40, command=self.choose_decrypt_output).grid(row=0, column=1)
 
-        # Passwort
-        pwlabel = ctk.CTkLabel(frame_opts, text="🔑 Passwort:", font=ctk.CTkFont(size=11, weight="bold"))
-        pwlabel.grid(row=2, column=0, sticky="w", padx=6, pady=(8,2))
-        pwrow = ctk.CTkFrame(frame_opts, fg_color="transparent")
-        pwrow.grid(row=3, column=0, sticky="ew", padx=6)
+        pwlbl = ctk.CTkLabel(opts, text="🔑 Passwort:", font=ctk.CTkFont(size=11, weight="bold"))
+        pwlbl.grid(row=2, column=0, sticky="w", padx=8, pady=(8,2))
+        pwrow = ctk.CTkFrame(opts, fg_color="transparent")
+        pwrow.grid(row=3, column=0, sticky="ew", padx=8)
         pwrow.grid_columnconfigure(0, weight=1)
-        self.decrypt_pwd_entry = ctk.CTkEntry(pwrow, show="•", height=40, placeholder_text="Passwort eingeben...")
+        self.decrypt_pwd_entry = ctk.CTkEntry(pwrow, show="•", height=44, placeholder_text="Passwort eingeben...")
         self.decrypt_pwd_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        self.decrypt_pwd_toggle = ctk.CTkButton(pwrow, text="👁️", width=60, height=36, command=lambda: self.toggle_password(self.decrypt_pwd_entry, self.decrypt_pwd_toggle))
+        # same "Passwort anzeigen" label
+        self.decrypt_pwd_toggle = ctk.CTkButton(pwrow, text="Passwort anzeigen", width=150, height=40, command=lambda: self.toggle_password(self.decrypt_pwd_entry, self.decrypt_pwd_toggle))
         self.decrypt_pwd_toggle.grid(row=0, column=1)
 
-        # Keyfile
-        kflabel = ctk.CTkLabel(frame_opts, text="🗝️ Keyfile (optional):", font=ctk.CTkFont(size=11, weight="bold"))
-        kflabel.grid(row=4, column=0, sticky="w", padx=6, pady=(8,2))
-        kfrow = ctk.CTkFrame(frame_opts, fg_color="transparent")
-        kfrow.grid(row=5, column=0, sticky="ew", padx=6, pady=(0,6))
+        kflbl = ctk.CTkLabel(opts, text="🗝️ Keyfile (optional):", font=ctk.CTkFont(size=11, weight="bold"))
+        kflbl.grid(row=4, column=0, sticky="w", padx=8, pady=(8,2))
+        kfrow = ctk.CTkFrame(opts, fg_color="transparent")
+        kfrow.grid(row=5, column=0, sticky="ew", padx=8, pady=(0,6))
         kfrow.grid_columnconfigure(0, weight=1)
-        self.decrypt_keyfile_entry = ctk.CTkEntry(kfrow, placeholder_text="Pfad zum Keyfile...", height=36)
+        self.decrypt_keyfile_entry = ctk.CTkEntry(kfrow, placeholder_text="Pfad zum Keyfile...", height=40)
         self.decrypt_keyfile_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
         kfbtns = ctk.CTkFrame(kfrow, fg_color="transparent")
         kfbtns.grid(row=0, column=1)
-        ctk.CTkButton(kfbtns, text="Wählen", width=92, height=34, command=lambda: self.choose_keyfile(self.decrypt_keyfile_entry)).grid(row=0, column=0, padx=(0,6))
-        ctk.CTkButton(kfbtns, text="Generieren", width=100, height=34, command=lambda: self.generate_keyfile(self.decrypt_keyfile_entry)).grid(row=0, column=1)
+        ctk.CTkButton(kfbtns, text="Wählen", width=100, height=36, command=lambda: self.choose_keyfile(self.decrypt_keyfile_entry)).grid(row=0, column=0, padx=(0,6))
+        ctk.CTkButton(kfbtns, text="Generieren", width=110, height=36, command=lambda: self.generate_keyfile(self.decrypt_keyfile_entry)).grid(row=0, column=1)
 
-        # Action
         action = ctk.CTkFrame(tab, fg_color="transparent")
-        action.grid(row=2, column=0, sticky="e", padx=padx, pady=(4,10))
-        self.decrypt_btn = ctk.CTkButton(action, text="🚀 Entschlüsseln", command=self.gui_decrypt, height=44, width=200, fg_color="#1f6aa5", hover_color="#144870")
+        action.grid(row=2, column=0, sticky="e", padx=padx, pady=(6,12))
+        self.decrypt_btn = ctk.CTkButton(action, text="🚀 Entschlüsseln", command=self.gui_decrypt, height=46, width=220, fg_color="#1f6aa5", hover_color="#144870")
         self.decrypt_btn.grid(row=0, column=0)
 
         if DND_AVAILABLE:
@@ -429,10 +423,13 @@ class ModernTimencGUI:
             self.decrypt_input_entry.dnd_bind('<<Drop>>', lambda e: self._on_drop_decrypt_input(e))
             self.decrypt_keyfile_entry.drop_target_register(DND_FILES)
             self.decrypt_keyfile_entry.dnd_bind('<<Drop>>', lambda e: self._on_drop_keyfile(e, self.decrypt_keyfile_entry))
+
         self.decrypt_input_entry.bind("<FocusOut>", lambda e: self._autosuggest_decrypt_output())
         self.decrypt_input_entry.bind("<KeyRelease>", lambda e: self._autosuggest_decrypt_output())
 
-    # --- DnD Handlers ---
+    # -----------------------
+    # Drag & drop handlers
+    # -----------------------
     def _on_drop_encrypt_input(self, event):
         paths = self._parse_dnd_event(event.data)
         if paths:
@@ -473,18 +470,21 @@ class ModernTimencGUI:
                 paths.append(clean_path)
         return paths
 
-    # --- Restliche Funktionen / Events ---
+    # -----------------------
+    # Interactions & helpers
+    # -----------------------
     def toggle_password(self, entry, toggle_btn):
+        """Toggle show/hide and update text to German labels requested."""
         current_show = entry.cget('show')
         if current_show == '•':
             entry.configure(show='')
-            toggle_btn.configure(text="🙈")
+            toggle_btn.configure(text="Passwort verbergen")
         else:
             entry.configure(show='•')
-            toggle_btn.configure(text="👁️")
+            toggle_btn.configure(text="Passwort anzeigen")
 
     def choose_encrypt_input(self):
-        path = filedialog.askopenfilename(title="Datei oder Ordner zum Verschlüsseln auswählen")
+        path = filedialog.askopenfilename(title="Datei zum Verschlüsseln auswählen")
         if not path:
             path = filedialog.askdirectory(title="Ordner zum Verschlüsseln auswählen")
         if path:
@@ -567,6 +567,9 @@ class ModernTimencGUI:
             self.decrypt_output_entry.delete(0, tk.END)
             self.decrypt_output_entry.insert(0, suggested)
 
+    # -----------------------
+    # Actions
+    # -----------------------
     def gui_encrypt(self):
         if not self.validate_encrypt_inputs():
             return
@@ -601,7 +604,10 @@ class ModernTimencGUI:
         finally:
             self.decrypt_btn.configure(state="normal", text="🚀 Entschlüsseln")
 
-    def validate_encrypt_inputs(self):
+    # -----------------------
+    # Validation + misc
+    # -----------------------
+    def validate_encrypt_inputs(self) -> bool:
         inp = self.encrypt_input_entry.get().strip()
         out = self.encrypt_output_entry.get().strip()
         pwd = self.encrypt_pwd_entry.get()
@@ -619,7 +625,7 @@ class ModernTimencGUI:
             return False
         return True
 
-    def validate_decrypt_inputs(self):
+    def validate_decrypt_inputs(self) -> bool:
         inp = self.decrypt_input_entry.get().strip()
         out = self.decrypt_output_entry.get().strip()
         pwd = self.decrypt_pwd_entry.get()
@@ -646,9 +652,12 @@ class ModernTimencGUI:
     def run(self):
         self.root.mainloop()
 
+# -----------------------
+# Entrypoint
+# -----------------------
 if __name__ == "__main__":
     if ctk is None:
-        print("Fehler: CustomTkinter ist nicht verfügbar. Bitte installieren Sie es mit: pip install customtkinter")
+        print("Fehler: CustomTkinter ist nicht verfügbar. Bitte installieren: pip install customtkinter tkinterdnd2")
         sys.exit(1)
     try:
         app = ModernTimencGUI()
