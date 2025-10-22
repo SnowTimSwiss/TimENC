@@ -15,6 +15,7 @@ from argon2.low_level import hash_secret_raw, Type
 # ---------------------------
 MAGIC = b"TIMENC"
 VERSION = 2
+APP_VERSION = "1.0.0"  # Application version (displayed in the GUI)
 ARGON2_TIME = 3
 ARGON2_MEMORY_KIB = 65536
 ARGON2_PARALLELISM = 4
@@ -207,7 +208,8 @@ class ModernTimencGUI:
             self.root = TkinterDnD.Tk()
         else:
             self.root = ctk.CTk()
-        self.root.title("Timenc - Sichere Verschlüsselung")
+        # include application version in the window title
+        self.root.title(f"Timenc {APP_VERSION} - Sichere Verschlüsselung")
         self.root.geometry("820x720")        # weniger breit, dafür höher
         self.root.minsize(760, 640)
 
@@ -239,7 +241,7 @@ class ModernTimencGUI:
         header.grid_columnconfigure(0, weight=1)
         title = ctk.CTkLabel(header, text="🔒 Timenc — Sichere Dateiverschlüsselung", font=ctk.CTkFont(size=20, weight="bold"))
         title.grid(row=0, column=0, sticky="w")
-        subtitle = ctk.CTkLabel(header, text="Verschlüsseln und entschlüsseln Sie Dateien sicher mit Passwort und Keyfile", font=ctk.CTkFont(size=12), text_color="gray")
+        subtitle = ctk.CTkLabel(header, text=f"Verschlüsseln und entschlüsseln Sie Dateien sicher mit Passwort und Keyfile — {APP_VERSION}", font=ctk.CTkFont(size=12), text_color="gray")
         subtitle.grid(row=1, column=0, sticky="w", pady=(6,0))
 
         # Tabview (slim)
@@ -256,7 +258,7 @@ class ModernTimencGUI:
         status = ctk.CTkFrame(content_frame, fg_color="#0b0b0c", corner_radius=8, height=38)
         status.grid(row=2, column=0, padx=12, pady=(0,12), sticky="ew")
         status.grid_propagate(False)
-        self.status_label = ctk.CTkLabel(status, text="✅ Bereit — Dateien per Drag & Drop in Eingabefelder", font=ctk.CTkFont(size=11), text_color="lightblue")
+        self.status_label = ctk.CTkLabel(status, text=f"✅ Bereit — {APP_VERSION} — Dateien per Drag & Drop in Eingabefelder", font=ctk.CTkFont(size=11), text_color="lightblue")
         self.status_label.grid(row=0, column=0, sticky="w", padx=10, pady=6)
 
     def _force_dark_title_bar(self):
