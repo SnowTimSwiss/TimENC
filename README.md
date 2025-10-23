@@ -15,7 +15,7 @@ It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation fo
 - **Protection against tar path traversal**
 - **Atomic file writes and secure permissions (600)**
 - **Optional secure deletion of source files**
-- **Simple, user-friendly GUI (Tkinter)**
+- **Simple, user-friendly GUI (Pyside6)**
 - **Cross-platform**: Windows, macOS, Linux
 
 ---
