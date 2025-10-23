@@ -37,7 +37,7 @@ except ImportError:
 # Core crypto / file helpers
 # ---------------------------
 MAGIC = b"TIMENC"
-VERSION = 2
+VERSION = 2 #Version of de/encrypting logic which hopefully will remain interoperable
 APP_VERSION = "1.1.0"  # Application version
 
 # ---  Argon2 defaults ---
