@@ -57,5 +57,5 @@ These parameters can be adjusted to increase or decrease computational cost base
 
 1. Download Source Code
 2. Install Python
-3. run "pip install cryptography argon2-cffi customtkinter tkinterdnd2" to install all necessary dependencies
+3. run "pip install PySide6 cryptography argon2-cffi" to install all necessary dependencies
 4. Run the python file
