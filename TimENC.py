@@ -1,4 +1,3 @@
-# app.py (Single-File-Version)
 from __future__ import annotations
 import os
 import sys
@@ -14,7 +13,6 @@ import stat
 import errno
 from functools import partial
 
-# Importiere Qt-Komponenten
 try:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -40,9 +38,9 @@ except ImportError:
 # ---------------------------
 MAGIC = b"TIMENC"
 VERSION = 2
-APP_VERSION = "1.0.0"  # Application version
+APP_VERSION = "1.1.0"  # Application version
 
-# --- Hardened Argon2 defaults ---
+# ---  Argon2 defaults ---
 ARGON2_TIME = 4
 ARGON2_MEMORY_KIB = 131072  # 128 MiB
 ARGON2_PARALLELISM = 4
@@ -389,7 +387,7 @@ def decrypt(input_file: str, out_dir: str, password: str, keyfile_path: Optional
             pass
 
 # ---------------------------
-# Keyfile generation (secure)
+# Keyfile generation
 # ---------------------------
 def generate_keyfile(path: str, size: int = 32) -> str:
     key_material = secrets.token_bytes(size)
@@ -423,8 +421,6 @@ def generate_keyfile(path: str, size: int = 32) -> str:
 #
 # -------------------------------------------------------------------
 
-# --- Bitwarden-inspiriertes QSS (Stylesheet) ---
-# Ein dunkles Thema, das an das Bitwarden-Design angelehnt ist
 APP_STYLESHEET = """
 QWidget {
     background-color: #1A1A1A; /* Dunkler Hintergrund */
