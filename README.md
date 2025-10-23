@@ -50,3 +50,12 @@ These parameters can be adjusted to increase or decrease computational cost base
 4. The data is encrypted with **ChaCha20-Poly1305**, and all metadata is authenticated.
 5. The output `.timenc` file contains everything necessary to decrypt.
 6. During decryption, all parameters and metadata are verified before decryption.
+
+---
+
+## How to use it on Platforms without a native app
+
+1. Download Source Code
+2. Install Python
+3. run "pip install cryptography argon2-cffi python3-tk" to install all necessary dependencies
+4. Run the python file
