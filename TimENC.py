@@ -1,3 +1,4 @@
+# app.py (Single-File-Version)
 from __future__ import annotations
 import os
 import sys
@@ -11,15 +12,37 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from argon2.low_level import hash_secret_raw, Type
 import stat
 import errno
+from functools import partial
+
+# Importiere Qt-Komponenten
+try:
+    from PySide6.QtWidgets import (
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QTabWidget, QLabel, QLineEdit, QPushButton, QFormLayout,
+        QFileDialog, QMessageBox, QStatusBar, QFrame
+    )
+    from PySide6.QtCore import QThread, QObject, Signal, Slot, Qt
+    from PySide6.QtGui import QDragEnterEvent, QDropEvent
+except ImportError:
+    print("Fehler: PySide6 nicht gefunden.")
+    print("Bitte installiere es mit: pip install PySide6")
+    sys.exit(1)
+
+
+# -------------------------------------------------------------------
+#
+#                         TIMENC KERNLOGIK
+#
+# -------------------------------------------------------------------
 
 # ---------------------------
 # Core crypto / file helpers
 # ---------------------------
 MAGIC = b"TIMENC"
 VERSION = 2
-APP_VERSION = "1.0.0"  # Application version (displayed in the GUI)
+APP_VERSION = "1.0.0"  # Application version
 
-# --- Hardened Argon2 defaults (can be tuned further depending on hardware) ---
+# --- Hardened Argon2 defaults ---
 ARGON2_TIME = 4
 ARGON2_MEMORY_KIB = 131072  # 128 MiB
 ARGON2_PARALLELISM = 4
@@ -393,511 +416,605 @@ def generate_keyfile(path: str, size: int = 32) -> str:
             pass
     return f"Keyfile erstellt: {path} ({size} Bytes)"
 
-# ---------------------------
-# GUI (CustomTkinter)
-# (unchanged except for minor error handling differences)
-# ---------------------------
-try:
-    import customtkinter as ctk
-    from tkinter import filedialog, messagebox
-    import tkinter as tk
-    try:
-        from tkinterdnd2 import DND_FILES, TkinterDnD
-        DND_AVAILABLE = True
-    except Exception:
-        DND_AVAILABLE = False
-        TkinterDnD = None
-except ImportError:
-    ctk = None
-    DND_AVAILABLE = False
 
-class ModernTimencGUI:
+# -------------------------------------------------------------------
+#
+#                         TIMENC GUI (PySide6)
+#
+# -------------------------------------------------------------------
+
+# --- Bitwarden-inspiriertes QSS (Stylesheet) ---
+# Ein dunkles Thema, das an das Bitwarden-Design angelehnt ist
+APP_STYLESHEET = """
+QWidget {
+    background-color: #1A1A1A; /* Dunkler Hintergrund */
+    color: #E0E0E0; /* Heller Text */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+}
+
+QMainWindow {
+    background-color: #121212; /* Noch dunklerer Haupt-Hintergrund */
+}
+
+QTabWidget::pane {
+    border: none;
+    background-color: #1E1E1E; /* Hintergrund des Tab-Inhalts */
+    border-radius: 8px;
+}
+
+QTabBar::tab {
+    background: #1E1E1E;
+    color: #AAAAAA;
+    padding: 12px 24px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    font-weight: bold;
+    min-width: 150px;
+}
+
+QTabBar::tab:selected {
+    background: #2B2B2B; /* Aktiver Tab etwas heller */
+    color: #FFFFFF;
+}
+
+QTabBar::tab:hover {
+    background: #333333;
+}
+
+/* Haupt-Container-Boxen in den Tabs */
+QFrame#TabContainer {
+    background-color: #2B2B2B;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+QLabel {
+    background-color: transparent;
+}
+
+QLabel#Header {
+    font-size: 24px;
+    font-weight: bold;
+    color: #FFFFFF;
+    padding-bottom: 5px;
+}
+
+QLabel#SubHeader {
+    font-size: 13px;
+    color: #AAAAAA;
+    padding-bottom: 15px;
+}
+
+QLineEdit {
+    background-color: #333333;
+    border: 1px solid #444444;
+    border-radius: 5px;
+    padding: 10px;
+    color: #E0E0E0;
+}
+
+QLineEdit:focus {
+    border: 1px solid #007ACC; /* Blauer Akzent bei Fokus */
+}
+
+QPushButton {
+    background-color: #444444;
+    color: #E0E0E0;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 5px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #555555;
+}
+
+/* Der Haupt-Aktionsbutton (Blau) */
+QPushButton#ActionButton {
+    background-color: #007ACC;
+    color: white;
+    font-size: 16px;
+    padding: 12px;
+}
+
+QPushButton#ActionButton:hover {
+    background-color: #005FA3;
+}
+
+/* Button zum Anzeigen des Passworts */
+QPushButton#TogglePasswordButton {
+    background-color: #333333;
+    color: #AAAAAA;
+    padding: 8px;
+}
+QPushButton#TogglePasswordButton:hover {
+    background-color: #444444;
+}
+
+QStatusBar {
+    color: #AAAAAA;
+}
+
+QStatusBar::item {
+    border: none;
+}
+"""
+
+# --- Worker-Thread für Krypto-Operationen ---
+# Verhindert das Einfrieren der GUI
+class Worker(QObject):
+    """
+    Führt eine Funktion in einem separaten Thread aus.
+    """
+    finished = Signal(str)  # Signal bei Erfolg (mit Nachricht)
+    error = Signal(str)     # Signal bei Fehler (mit Fehlermeldung)
+
+    def __init__(self, func, *args, **kwargs):
+        super().__init__()
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+
+    @Slot()
+    def run(self):
+        """Führt die Funktion aus und sendet Signale."""
+        try:
+            # HINWEIS: self.func ist jetzt z.B. die 'encrypt'-Funktion
+            # die weiter oben in dieser Datei definiert ist.
+            result_message = self.func(*self.args, **self.kwargs)
+            self.finished.emit(result_message)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+# --- Drag-and-Drop-Eingabefeld ---
+class DropLineEdit(QLineEdit):
+    """
+    Ein QLineEdit, das Drag-and-Drop von Dateien/Ordnern akzeptiert.
+    """
+    file_dropped = Signal(str) # Signal, wenn eine Datei gedroppt wurde
+
+    def __init__(self, placeholder_text="", parent=None):
+        super().__init__(parent)
+        self.setPlaceholderText(placeholder_text)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        """Akzeptiert das Event, wenn es URLs (Dateipfade) enthält."""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent):
+        """Verarbeitet das Drop-Event und setzt den Text des Feldes."""
+        if event.mimeData().hasUrls():
+            # Nimm nur den ersten Pfad, falls mehrere gedroppt wurden
+            url = event.mimeData().urls()[0]
+            path = url.toLocalFile()
+            self.setText(path)
+            self.file_dropped.emit(path) # Signal senden
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+# --- Hauptfenster der Anwendung ---
+class TimencApp(QMainWindow):
     def __init__(self):
-        if ctk is None:
-            raise RuntimeError("CustomTkinter nicht verfügbar")
-        # Appearance
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("dark-blue")
+        super().__init__()
+        self.thread = None # Thread-Management
+        self.worker = None # Worker-Management
 
-        # Root window: less wide, taller
-        if DND_AVAILABLE and TkinterDnD:
-            self.root = TkinterDnD.Tk()
-        else:
-            self.root = ctk.CTk()
-        # include application version in the window title
-        self.root.title(f"Timenc {APP_VERSION} - Sichere Verschlüsselung")
-        self.root.geometry("820x720")        # weniger breit, dafür höher
-        self.root.minsize(760, 640)
+        # APP_VERSION ist jetzt eine globale Variable von oben
+        self.setWindowTitle(f"Timenc {APP_VERSION} - Sichere Verschlüsselung")
+        self.setGeometry(100, 100, 800, 650) # Feste Größe
+        self.setMinimumSize(700, 600)
 
-        # background to avoid white edges
-        self.main_bg = "#111213"
-        try:
-            self.root.configure(bg=self.main_bg)
-        except Exception:
-            pass
+        # Zentrales Widget und Hauptlayout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(20, 20, 20, 20)
 
-        self._force_dark_title_bar()
+        # 1. Header
+        self._create_header(main_layout)
 
-        # Layout: centered, fixed content width for nicer column
-        self.root.grid_columnconfigure(0, weight=1)
-        self.root.grid_columnconfigure(1, weight=0)
-        self.root.grid_columnconfigure(2, weight=1)
-        self.root.grid_rowconfigure(0, weight=1)
+        # 2. Tab-Widget
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
 
-        content_width = 720  # narrower content column
-        content_frame = ctk.CTkFrame(self.root, width=content_width, fg_color=self.main_bg, corner_radius=12)
-        content_frame.grid(row=0, column=1, sticky="nsew", pady=12)
-        content_frame.grid_propagate(False)
-        content_frame.grid_columnconfigure(0, weight=1)
-        content_frame.grid_rowconfigure(2, weight=1)
+        # 3. Tabs erstellen
+        self.encrypt_tab = QWidget()
+        self.decrypt_tab = QWidget()
 
-        # Header (clean)
-        header = ctk.CTkFrame(content_frame, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=12, pady=(10,4))
-        header.grid_columnconfigure(0, weight=1)
-        title = ctk.CTkLabel(header, text="🔒 Timenc — Sichere Dateiverschlüsselung", font=ctk.CTkFont(size=20, weight="bold"))
-        title.grid(row=0, column=0, sticky="w")
-        subtitle = ctk.CTkLabel(header, text=f"Verschlüsseln und entschlüsseln Sie Dateien sicher mit Passwort und Keyfile — {APP_VERSION}", font=ctk.CTkFont(size=12), text_color="gray")
-        subtitle.grid(row=1, column=0, sticky="w", pady=(6,0))
+        self.tabs.addTab(self.encrypt_tab, "🔒 Verschlüsseln")
+        self.tabs.addTab(self.decrypt_tab, "🔓 Entschlüsseln")
 
-        # Tabview (slim)
-        self.tabview = ctk.CTkTabview(content_frame, width=content_width-20, corner_radius=10, fg_color="#0b0b0c")
-        self.tabview.grid(row=1, column=0, padx=12, pady=(8,10), sticky="nsew")
-        self.encrypt_tab = self.tabview.add("🔒 Verschlüsseln")
-        self.decrypt_tab = self.tabview.add("🔓 Entschlüsseln")
+        # UI für jeden Tab erstellen
+        self._create_encrypt_ui()
+        self._create_decrypt_ui()
 
-        # build UI
-        self._build_encrypt_tab(content_width-36)
-        self._build_decrypt_tab(content_width-36)
+        # 4. Statusleiste
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.set_status(f"✅ Bereit — {APP_VERSION}") # APP_VERSION global
 
-        # status bar
-        status = ctk.CTkFrame(content_frame, fg_color="#0b0b0c", corner_radius=8, height=38)
-        status.grid(row=2, column=0, padx=12, pady=(0,12), sticky="ew")
-        status.grid_propagate(False)
-        self.status_label = ctk.CTkLabel(status, text=f"✅ Bereit — {APP_VERSION} — Dateien per Drag & Drop in Eingabefelder", font=ctk.CTkFont(size=11), text_color="lightblue")
-        self.status_label.grid(row=0, column=0, sticky="w", padx=10, pady=6)
+        # Autosuggest-Logik verbinden
+        self.enc_input.file_dropped.connect(self._autosuggest_encrypt_output)
+        self.enc_input.textChanged.connect(self._autosuggest_encrypt_output)
+        self.dec_input.file_dropped.connect(self._autosuggest_decrypt_output)
+        self.dec_input.textChanged.connect(self._autosuggest_decrypt_output)
 
-    def _force_dark_title_bar(self):
-        try:
-            if sys.platform == "win32":
-                import ctypes
-                set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
-                hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
-                value = ctypes.c_int(2)
-                set_window_attribute(hwnd, 20, ctypes.byref(value), ctypes.sizeof(value))
-        except Exception:
-            pass
+    def _create_header(self, layout: QVBoxLayout):
+        """Erstellt den Titel und Untertitel."""
+        title = QLabel("Timenc")
+        title.setObjectName("Header")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        subtitle = QLabel(f"Sichere Dateiverschlüsselung mit Passwort und Keyfile")
+        subtitle.setObjectName("SubHeader")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-    # -----------------------
-    # Encrypt tab (wider entries)
-    # -----------------------
-    def _build_encrypt_tab(self, inner_width: int):
-        tab = self.encrypt_tab
-        tab.grid_columnconfigure(0, weight=1)
-        padx = 12
-        pady = 8
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
 
-        area = ctk.CTkFrame(tab, fg_color="#151516", corner_radius=10)
-        area.grid(row=0, column=0, sticky="ew", padx=padx, pady=(pady,10))
-        area.grid_columnconfigure(0, weight=1)
+    def _create_encrypt_ui(self):
+        """Erstellt die UI für den "Verschlüsseln"-Tab."""
+        layout = QVBoxLayout(self.encrypt_tab)
+        layout.setContentsMargins(15, 15, 15, 15)
 
-        lbl = ctk.CTkLabel(area, text="📁 Datei / Ordner zum Verschlüsseln", font=ctk.CTkFont(size=13, weight="bold"))
-        lbl.grid(row=0, column=0, sticky="w", padx=12, pady=(10,2))
-        sub = ctk.CTkLabel(area, text="⤵️ Ziehen Sie eine Datei oder einen Ordner hierher", font=ctk.CTkFont(size=10), text_color="lightblue")
-        sub.grid(row=1, column=0, sticky="w", padx=12, pady=(0,8))
+        # Container für bessere Optik
+        container = QFrame()
+        container.setObjectName("TabContainer")
+        container_layout = QFormLayout(container)
+        container_layout.setSpacing(15)
+        container_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
-        inrow = ctk.CTkFrame(area, fg_color="transparent")
-        inrow.grid(row=2, column=0, sticky="ew", padx=12, pady=(0,12))
-        inrow.grid_columnconfigure(0, weight=1)
-        # make input field a bit larger
-        self.encrypt_input_entry = ctk.CTkEntry(inrow, placeholder_text="Pfad zur Datei oder zum Ordner...", height=50, fg_color="#2a2a2b")
-        self.encrypt_input_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        ctk.CTkButton(inrow, text="Durchsuchen", width=120, height=42, command=self.choose_encrypt_input).grid(row=0, column=1)
+        # 1. Eingabe (Datei/Ordner)
+        self.enc_input = DropLineEdit("Datei oder Ordner hierher ziehen...")
+        enc_input_btn = QPushButton("Durchsuchen...")
+        enc_input_btn.clicked.connect(self._choose_encrypt_input)
+        
+        enc_input_layout = QHBoxLayout()
+        enc_input_layout.addWidget(self.enc_input)
+        enc_input_layout.addWidget(enc_input_btn)
+        container_layout.addRow(QLabel("📁 Datei / Ordner:"), enc_input_layout)
 
-        opts = ctk.CTkFrame(tab, fg_color="transparent")
-        opts.grid(row=1, column=0, sticky="ew", padx=padx, pady=(2,10))
-        opts.grid_columnconfigure(0, weight=1)
+        # 2. Ausgabe (Datei)
+        self.enc_output = QLineEdit()
+        self.enc_output.setPlaceholderText("Zieldatei (z.B. geheim.timenc)")
+        enc_output_btn = QPushButton("Speichern unter...")
+        enc_output_btn.clicked.connect(self._choose_encrypt_output)
+        
+        enc_output_layout = QHBoxLayout()
+        enc_output_layout.addWidget(self.enc_output)
+        enc_output_layout.addWidget(enc_output_btn)
+        container_layout.addRow(QLabel("💾 Ausgabedatei:"), enc_output_layout)
 
-        # Ausgabedatei (wider)
-        outlbl = ctk.CTkLabel(opts, text="💾 Ausgabedatei:", font=ctk.CTkFont(size=11, weight="bold"))
-        outlbl.grid(row=0, column=0, sticky="w", padx=8, pady=(6,2))
-        outrow = ctk.CTkFrame(opts, fg_color="transparent")
-        outrow.grid(row=1, column=0, sticky="ew", padx=8)
-        outrow.grid_columnconfigure(0, weight=1)
-        self.encrypt_output_entry = ctk.CTkEntry(outrow, height=44)
-        self.encrypt_output_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        ctk.CTkButton(outrow, text="Durchsuchen", width=120, height=40, command=self.choose_encrypt_output).grid(row=0, column=1)
+        # 3. Passwort
+        self.enc_pwd = QLineEdit()
+        self.enc_pwd.setEchoMode(QLineEdit.EchoMode.Password)
+        self.enc_pwd_toggle_btn = QPushButton("Anzeigen")
+        self.enc_pwd_toggle_btn.setObjectName("TogglePasswordButton")
+        self.enc_pwd_toggle_btn.setCheckable(True)
+        self.enc_pwd_toggle_btn.toggled.connect(self._toggle_password_visibility)
+        
+        enc_pwd_layout = QHBoxLayout()
+        enc_pwd_layout.addWidget(self.enc_pwd)
+        enc_pwd_layout.addWidget(self.enc_pwd_toggle_btn)
+        container_layout.addRow(QLabel("🔑 Passwort:"), enc_pwd_layout)
 
-        # Password (label for toggle: "Passwort anzeigen")
-        pwlbl = ctk.CTkLabel(opts, text="🔑 Passwort:", font=ctk.CTkFont(size=11, weight="bold"))
-        pwlbl.grid(row=2, column=0, sticky="w", padx=8, pady=(8,2))
-        pwrow = ctk.CTkFrame(opts, fg_color="transparent")
-        pwrow.grid(row=3, column=0, sticky="ew", padx=8)
-        pwrow.grid_columnconfigure(0, weight=1)
-        self.encrypt_pwd_entry = ctk.CTkEntry(pwrow, show="•", height=44, placeholder_text="Passwort eingeben...")
-        self.encrypt_pwd_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        # change button text to "Passwort anzeigen" / "Passwort verbergen"
-        self.encrypt_pwd_toggle = ctk.CTkButton(pwrow, text="Passwort anzeigen", width=150, height=40, command=lambda: self.toggle_password(self.encrypt_pwd_entry, self.encrypt_pwd_toggle))
-        self.encrypt_pwd_toggle.grid(row=0, column=1)
+        # 4. Keyfile
+        self.enc_keyfile = DropLineEdit("Keyfile hierher ziehen (optional)...")
+        enc_keyfile_select_btn = QPushButton("Wählen...")
+        enc_keyfile_gen_btn = QPushButton("Generieren...")
+        enc_keyfile_select_btn.clicked.connect(partial(self._choose_keyfile, self.enc_keyfile))
+        enc_keyfile_gen_btn.clicked.connect(partial(self._generate_keyfile, self.enc_keyfile))
 
-        # Keyfile
-        kflbl = ctk.CTkLabel(opts, text="🗝️ Keyfile (optional):", font=ctk.CTkFont(size=11, weight="bold"))
-        kflbl.grid(row=4, column=0, sticky="w", padx=8, pady=(8,2))
-        kfrow = ctk.CTkFrame(opts, fg_color="transparent")
-        kfrow.grid(row=5, column=0, sticky="ew", padx=8, pady=(0,6))
-        kfrow.grid_columnconfigure(0, weight=1)
-        self.encrypt_keyfile_entry = ctk.CTkEntry(kfrow, placeholder_text="Pfad zum Keyfile...", height=40)
-        self.encrypt_keyfile_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        kfbtns = ctk.CTkFrame(kfrow, fg_color="transparent")
-        kfbtns.grid(row=0, column=1)
-        ctk.CTkButton(kfbtns, text="Wählen", width=100, height=36, command=lambda: self.choose_keyfile(self.encrypt_keyfile_entry)).grid(row=0, column=0, padx=(0,6))
-        ctk.CTkButton(kfbtns, text="Generieren", width=110, height=36, command=lambda: self.generate_keyfile(self.encrypt_keyfile_entry)).grid(row=0, column=1)
+        enc_keyfile_layout = QHBoxLayout()
+        enc_keyfile_layout.addWidget(self.enc_keyfile)
+        enc_keyfile_layout.addWidget(enc_keyfile_select_btn)
+        enc_keyfile_layout.addWidget(enc_keyfile_gen_btn)
+        container_layout.addRow(QLabel("🗝️ Keyfile (Optional):"), enc_keyfile_layout)
 
-        # Action button (bigger)
-        action = ctk.CTkFrame(tab, fg_color="transparent")
-        action.grid(row=2, column=0, sticky="e", padx=padx, pady=(6,12))
-        self.encrypt_btn = ctk.CTkButton(action, text="🚀 Verschlüsseln", command=self.gui_encrypt, height=46, width=220, fg_color="#1f6aa5", hover_color="#144870")
-        self.encrypt_btn.grid(row=0, column=0)
+        layout.addWidget(container)
+        layout.addStretch() # Platzhalter nach unten
 
-        # DnD
-        if DND_AVAILABLE:
-            self.encrypt_input_entry.drop_target_register(DND_FILES)
-            self.encrypt_input_entry.dnd_bind('<<Drop>>', lambda e: self._on_drop_encrypt_input(e))
-            self.encrypt_keyfile_entry.drop_target_register(DND_FILES)
-            self.encrypt_keyfile_entry.dnd_bind('<<Drop>>', lambda e: self._on_drop_keyfile(e, self.encrypt_keyfile_entry))
+        # 5. Aktions-Button
+        self.enc_button = QPushButton("🚀 Verschlüsseln")
+        self.enc_button.setObjectName("ActionButton")
+        self.enc_button.clicked.connect(self._run_encrypt)
+        layout.addWidget(self.enc_button)
 
-        # events
-        self.encrypt_input_entry.bind("<FocusOut>", lambda e: self._autosuggest_encrypt_output())
-        self.encrypt_input_entry.bind("<KeyRelease>", lambda e: self._autosuggest_encrypt_output())
+    def _create_decrypt_ui(self):
+        """Erstellt die UI für den "Entschlüsseln"-Tab."""
+        layout = QVBoxLayout(self.decrypt_tab)
+        layout.setContentsMargins(15, 15, 15, 15)
 
-    # -----------------------
-    # Decrypt tab
-    # -----------------------
-    def _build_decrypt_tab(self, inner_width: int):
-        tab = self.decrypt_tab
-        tab.grid_columnconfigure(0, weight=1)
-        padx = 12
-        pady = 8
+        container = QFrame()
+        container.setObjectName("TabContainer")
+        container_layout = QFormLayout(container)
+        container_layout.setSpacing(15)
+        container_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
-        area = ctk.CTkFrame(tab, fg_color="#151516", corner_radius=10)
-        area.grid(row=0, column=0, sticky="ew", padx=padx, pady=(pady,10))
-        area.grid_columnconfigure(0, weight=1)
+        # 1. Eingabe (Datei)
+        self.dec_input = DropLineEdit("Verschlüsselte .timenc Datei hierher ziehen...")
+        dec_input_btn = QPushButton("Durchsuchen...")
+        dec_input_btn.clicked.connect(self._choose_decrypt_input)
+        
+        dec_input_layout = QHBoxLayout()
+        dec_input_layout.addWidget(self.dec_input)
+        dec_input_layout.addWidget(dec_input_btn)
+        container_layout.addRow(QLabel("📄 .timenc Datei:"), dec_input_layout)
 
-        lbl = ctk.CTkLabel(area, text="📄 Datei zum Entschlüsseln", font=ctk.CTkFont(size=13, weight="bold"))
-        lbl.grid(row=0, column=0, sticky="w", padx=12, pady=(10,2))
-        sub = ctk.CTkLabel(area, text="⤵️ Ziehen Sie die verschlüsselte Datei hierher", font=ctk.CTkFont(size=10), text_color="lightblue")
-        sub.grid(row=1, column=0, sticky="w", padx=12, pady=(0,8))
+        # 2. Ausgabe (Ordner)
+        self.dec_output = QLineEdit()
+        self.dec_output.setPlaceholderText("Zielordner für entschlüsselte Dateien")
+        dec_output_btn = QPushButton("Ordner wählen...")
+        dec_output_btn.clicked.connect(self._choose_decrypt_output)
 
-        inrow = ctk.CTkFrame(area, fg_color="transparent")
-        inrow.grid(row=2, column=0, sticky="ew", padx=12, pady=(0,12))
-        inrow.grid_columnconfigure(0, weight=1)
-        self.decrypt_input_entry = ctk.CTkEntry(inrow, placeholder_text="Pfad zur verschlüsselten Datei...", height=50, fg_color="#2a2a2b")
-        self.decrypt_input_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        ctk.CTkButton(inrow, text="Durchsuchen", width=120, height=42, command=self.choose_decrypt_input).grid(row=0, column=1)
+        dec_output_layout = QHBoxLayout()
+        dec_output_layout.addWidget(self.dec_output)
+        dec_output_layout.addWidget(dec_output_btn)
+        container_layout.addRow(QLabel("📂 Zielordner:"), dec_output_layout)
 
-        opts = ctk.CTkFrame(tab, fg_color="transparent")
-        opts.grid(row=1, column=0, sticky="ew", padx=padx, pady=(2,10))
-        opts.grid_columnconfigure(0, weight=1)
+        # 3. Passwort
+        self.dec_pwd = QLineEdit()
+        self.dec_pwd.setEchoMode(QLineEdit.EchoMode.Password)
+        self.dec_pwd_toggle_btn = QPushButton("Anzeigen")
+        self.dec_pwd_toggle_btn.setObjectName("TogglePasswordButton")
+        self.dec_pwd_toggle_btn.setCheckable(True)
+        self.dec_pwd_toggle_btn.toggled.connect(self._toggle_password_visibility)
 
-        outlbl = ctk.CTkLabel(opts, text="📂 Zielordner:", font=ctk.CTkFont(size=11, weight="bold"))
-        outlbl.grid(row=0, column=0, sticky="w", padx=8, pady=(6,2))
-        outrow = ctk.CTkFrame(opts, fg_color="transparent")
-        outrow.grid(row=1, column=0, sticky="ew", padx=8)
-        outrow.grid_columnconfigure(0, weight=1)
-        self.decrypt_output_entry = ctk.CTkEntry(outrow, height=44, placeholder_text="Ordner für entschlüsselte Dateien...")
-        self.decrypt_output_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        ctk.CTkButton(outrow, text="Durchsuchen", width=120, height=40, command=self.choose_decrypt_output).grid(row=0, column=1)
+        dec_pwd_layout = QHBoxLayout()
+        dec_pwd_layout.addWidget(self.dec_pwd)
+        dec_pwd_layout.addWidget(self.dec_pwd_toggle_btn)
+        container_layout.addRow(QLabel("🔑 Passwort:"), dec_pwd_layout)
 
-        pwlbl = ctk.CTkLabel(opts, text="🔑 Passwort:", font=ctk.CTkFont(size=11, weight="bold"))
-        pwlbl.grid(row=2, column=0, sticky="w", padx=8, pady=(8,2))
-        pwrow = ctk.CTkFrame(opts, fg_color="transparent")
-        pwrow.grid(row=3, column=0, sticky="ew", padx=8)
-        pwrow.grid_columnconfigure(0, weight=1)
-        self.decrypt_pwd_entry = ctk.CTkEntry(pwrow, show="•", height=44, placeholder_text="Passwort eingeben...")
-        self.decrypt_pwd_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        # same "Passwort anzeigen" label
-        self.decrypt_pwd_toggle = ctk.CTkButton(pwrow, text="Passwort anzeigen", width=150, height=40, command=lambda: self.toggle_password(self.decrypt_pwd_entry, self.decrypt_pwd_toggle))
-        self.decrypt_pwd_toggle.grid(row=0, column=1)
+        # 4. Keyfile
+        self.dec_keyfile = DropLineEdit("Keyfile hierher ziehen (optional)...")
+        dec_keyfile_select_btn = QPushButton("Wählen...")
+        dec_keyfile_gen_btn = QPushButton("Generieren...")
+        dec_keyfile_select_btn.clicked.connect(partial(self._choose_keyfile, self.dec_keyfile))
+        dec_keyfile_gen_btn.clicked.connect(partial(self._generate_keyfile, self.dec_keyfile))
 
-        kflbl = ctk.CTkLabel(opts, text="🗝️ Keyfile (optional):", font=ctk.CTkFont(size=11, weight="bold"))
-        kflbl.grid(row=4, column=0, sticky="w", padx=8, pady=(8,2))
-        kfrow = ctk.CTkFrame(opts, fg_color="transparent")
-        kfrow.grid(row=5, column=0, sticky="ew", padx=8, pady=(0,6))
-        kfrow.grid_columnconfigure(0, weight=1)
-        self.decrypt_keyfile_entry = ctk.CTkEntry(kfrow, placeholder_text="Pfad zum Keyfile...", height=40)
-        self.decrypt_keyfile_entry.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        kfbtns = ctk.CTkFrame(kfrow, fg_color="transparent")
-        kfbtns.grid(row=0, column=1)
-        ctk.CTkButton(kfbtns, text="Wählen", width=100, height=36, command=lambda: self.choose_keyfile(self.decrypt_keyfile_entry)).grid(row=0, column=0, padx=(0,6))
-        ctk.CTkButton(kfbtns, text="Generieren", width=110, height=36, command=lambda: self.generate_keyfile(self.decrypt_keyfile_entry)).grid(row=0, column=1)
+        dec_keyfile_layout = QHBoxLayout()
+        dec_keyfile_layout.addWidget(self.dec_keyfile)
+        dec_keyfile_layout.addWidget(dec_keyfile_select_btn)
+        dec_keyfile_layout.addWidget(dec_keyfile_gen_btn)
+        container_layout.addRow(QLabel("🗝️ Keyfile (Optional):"), dec_keyfile_layout)
 
-        action = ctk.CTkFrame(tab, fg_color="transparent")
-        action.grid(row=2, column=0, sticky="e", padx=padx, pady=(6,12))
-        self.decrypt_btn = ctk.CTkButton(action, text="🚀 Entschlüsseln", command=self.gui_decrypt, height=46, width=220, fg_color="#1f6aa5", hover_color="#144870")
-        self.decrypt_btn.grid(row=0, column=0)
+        layout.addWidget(container)
+        layout.addStretch()
 
-        if DND_AVAILABLE:
-            self.decrypt_input_entry.drop_target_register(DND_FILES)
-            self.decrypt_input_entry.dnd_bind('<<Drop>>', lambda e: self._on_drop_decrypt_input(e))
-            self.decrypt_keyfile_entry.drop_target_register(DND_FILES)
-            self.decrypt_keyfile_entry.dnd_bind('<<Drop>>', lambda e: self._on_drop_keyfile(e, self.decrypt_keyfile_entry))
+        # 5. Aktions-Button
+        self.dec_button = QPushButton("🚀 Entschlüsseln")
+        self.dec_button.setObjectName("ActionButton")
+        self.dec_button.clicked.connect(self._run_decrypt)
+        layout.addWidget(self.dec_button)
 
-        self.decrypt_input_entry.bind("<FocusOut>", lambda e: self._autosuggest_decrypt_output())
-        self.decrypt_input_entry.bind("<KeyRelease>", lambda e: self._autosuggest_decrypt_output())
+    # --- UI-Interaktions-Handler ---
 
-    # -----------------------
-    # Drag & drop handlers
-    # -----------------------
-    def _on_drop_encrypt_input(self, event):
-        paths = self._parse_dnd_event(event.data)
-        if paths:
-            path = paths[0]
-            self.encrypt_input_entry.delete(0, tk.END)
-            self.encrypt_input_entry.insert(0, path)
-            self._autosuggest_encrypt_output()
-            self.set_status(f"✅ Eingabe ausgewählt: {Path(path).name}")
-
-    def _on_drop_decrypt_input(self, event):
-        paths = self._parse_dnd_event(event.data)
-        if paths:
-            path = paths[0]
-            if not path.lower().endswith('.timenc'):
-                self.set_status("❌ Fehler: Nur .timenc Dateien können entschlüsselt werden!")
-                messagebox.showerror("Falscher Dateityp", "Bitte wählen Sie eine .timenc Datei aus!")
-                return
-            self.decrypt_input_entry.delete(0, tk.END)
-            self.decrypt_input_entry.insert(0, path)
-            self._autosuggest_decrypt_output()
-            self.set_status(f"✅ Verschlüsselte Datei ausgewählt: {Path(path).name}")
-
-    def _on_drop_keyfile(self, event, entry_widget):
-        paths = self._parse_dnd_event(event.data)
-        if paths:
-            path = paths[0]
-            entry_widget.delete(0, tk.END)
-            entry_widget.insert(0, path)
-            self.set_status(f"✅ Keyfile ausgewählt: {Path(path).name}")
-
-    def _parse_dnd_event(self, data: str):
-        if not data:
-            return []
-        paths = []
-        for path in data.split():
-            clean_path = path.strip('{}')
-            if clean_path:
-                paths.append(clean_path)
-        return paths
-
-    # -----------------------
-    # Interactions & helpers
-    # -----------------------
-    def toggle_password(self, entry, toggle_btn):
-        """Toggle show/hide and update text to German labels requested."""
-        current_show = entry.cget('show')
-        if current_show == '•':
-            entry.configure(show='')
-            toggle_btn.configure(text="Passwort verbergen")
-        else:
-            entry.configure(show='•')
-            toggle_btn.configure(text="Passwort anzeigen")
-
-    def choose_encrypt_input(self):
-        path = filedialog.askopenfilename(title="Datei zum Verschlüsseln auswählen")
+    def _choose_encrypt_input(self):
+        """Wählt eine Datei ODER einen Ordner (mit Fallback, wie im Original)."""
+        path, _ = QFileDialog.getOpenFileName(self, "Datei zum Verschlüsseln auswählen")
         if not path:
-            path = filedialog.askdirectory(title="Ordner zum Verschlüsseln auswählen")
+            path = QFileDialog.getExistingDirectory(self, "Ordner zum Verschlüsseln auswählen")
+        
         if path:
-            self.encrypt_input_entry.delete(0, tk.END)
-            self.encrypt_input_entry.insert(0, path)
+            self.enc_input.setText(path)
             self._autosuggest_encrypt_output()
-            self.set_status(f"✅ Eingabe ausgewählt: {Path(path).name}")
 
-    def choose_encrypt_output(self):
-        current_input = self.encrypt_input_entry.get().strip()
-        default_name = "verschluesselt.timenc"
-        if current_input:
-            p = Path(current_input)
-            if p.exists():
-                if p.is_dir():
-                    default_name = f"{p.name}.timenc"
-                else:
-                    default_name = f"{p.stem}.timenc"
-        out = filedialog.asksaveasfilename(title="Verschlüsselte Datei speichern als", defaultextension=".timenc", filetypes=[("TIMENC Dateien", "*.timenc")], initialfile=default_name)
-        if out:
-            self.encrypt_output_entry.delete(0, tk.END)
-            self.encrypt_output_entry.insert(0, out)
-
-    def choose_decrypt_input(self):
-        path = filedialog.askopenfilename(title="Verschlüsselte Datei auswählen", filetypes=[("TIMENC Dateien", "*.timenc"), ("Alle Dateien", "*.*")])
+    def _choose_encrypt_output(self):
+        """Wählt eine Zieldatei zum Speichern."""
+        default_name = self._get_suggested_enc_output() or "verschluesselt.timenc"
+        path, _ = QFileDialog.getSaveFileName(self, "Verschlüsselte Datei speichern als",
+                                              default_name, "TIMENC Dateien (*.timenc)")
         if path:
-            self.decrypt_input_entry.delete(0, tk.END)
-            self.decrypt_input_entry.insert(0, path)
+            self.enc_output.setText(path)
+
+    def _choose_decrypt_input(self):
+        """Wählt eine .timenc-Datei zum Entschlüsseln."""
+        path, _ = QFileDialog.getOpenFileName(self, "Verschlüsselte Datei auswählen",
+                                              filter="TIMENC Dateien (*.timenc);;Alle Dateien (*.*)")
+        if path:
+            self.dec_input.setText(path)
             self._autosuggest_decrypt_output()
-            self.set_status(f"✅ Verschlüsselte Datei ausgewählt: {Path(path).name}")
 
-    def choose_decrypt_output(self):
-        out = filedialog.askdirectory(title="Zielordner für entschlüsselte Dateien auswählen")
-        if out:
-            self.decrypt_output_entry.delete(0, tk.END)
-            self.decrypt_output_entry.insert(0, out)
-
-    def choose_keyfile(self, entry):
-        path = filedialog.askopenfilename(title="Keyfile auswählen", filetypes=[("Keyfiles", "*.bin"), ("Alle Dateien", "*.*")])
+    def _choose_decrypt_output(self):
+        """Wählt einen Zielordner für die entschlüsselten Dateien."""
+        path = QFileDialog.getExistingDirectory(self, "Zielordner auswählen")
         if path:
-            entry.delete(0, tk.END)
-            entry.insert(0, path)
-            self.set_status(f"✅ Keyfile ausgewählt: {Path(path).name}")
+            self.dec_output.setText(path)
 
-    def generate_keyfile(self, entry):
-        path = filedialog.asksaveasfilename(title="Keyfile speichern als", defaultextension=".bin", filetypes=[("Keyfiles", "*.bin"), ("Alle Dateien", "*.*")])
+    def _choose_keyfile(self, target_line_edit: QLineEdit):
+        """Wählt ein Keyfile für das angegebene Feld."""
+        path, _ = QFileDialog.getOpenFileName(self, "Keyfile auswählen")
         if path:
-            try:
-                result = generate_keyfile(path)
-                entry.delete(0, tk.END)
-                entry.insert(0, path)
-                messagebox.showinfo("Keyfile erstellt", result)
-                self.set_status("✅ Keyfile erfolgreich generiert")
-            except FileExistsError:
-                messagebox.showerror("Fehler", "Keyfile existiert bereits. Bitte wählen Sie einen anderen Namen.")
-                self.set_status("❌ Fehler beim Generieren des Keyfiles")
-            except Exception as e:
-                messagebox.showerror("Fehler", f"Keyfile konnte nicht erstellt werden: {e}")
-                self.set_status("❌ Fehler beim Generieren des Keyfiles")
+            target_line_edit.setText(path)
+
+    def _generate_keyfile(self, target_line_edit: QLineEdit):
+        """Generiert ein neues Keyfile und trägt es ins Feld ein."""
+        path, _ = QFileDialog.getSaveFileName(self, "Neues Keyfile speichern als", "timenc.keyfile")
+        if not path:
+            return
+        
+        try:
+            # generate_keyfile ist global definiert
+            self.run_task(generate_keyfile, path)
+            target_line_edit.setText(path) # Bei Erfolg setzen
+        except Exception as e:
+            self._on_task_error(f"Fehler bei Keyfile-Erstellung: {e}")
+
+    def _toggle_password_visibility(self, checked: bool):
+        """Schaltet die Sichtbarkeit des Passworts um."""
+        # Finde heraus, welcher Button gedrückt wurde
+        sender = self.sender()
+        if sender == self.enc_pwd_toggle_btn:
+            target_edit = self.enc_pwd
+        elif sender == self.dec_pwd_toggle_btn:
+            target_edit = self.dec_pwd
+        else:
+            return
+
+        if checked:
+            target_edit.setEchoMode(QLineEdit.EchoMode.Normal)
+            sender.setText("Verbergen")
+        else:
+            target_edit.setEchoMode(QLineEdit.EchoMode.Password)
+            sender.setText("Anzeigen")
+
+    # --- Autosuggest-Logik ---
+
+    def _get_suggested_enc_output(self) -> str:
+        """Schlägt einen Ausgabenamen basierend auf der Eingabe vor."""
+        in_path_str = self.enc_input.text().strip()
+        if not in_path_str:
+            return ""
+        
+        p = Path(in_path_str)
+        if not p.exists(): # Pfad vielleicht noch unvollständig
+             return f"{p.name}.timenc"
+
+        if p.is_dir():
+            return str(p.parent / f"{p.name}.timenc")
+        else:
+            return str(p.parent / f"{p.stem}.timenc")
 
     def _autosuggest_encrypt_output(self):
-        inp = self.encrypt_input_entry.get().strip()
-        cur_out = self.encrypt_output_entry.get().strip()
-        if not inp or cur_out:
-            return
-        p = Path(inp)
-        if p.exists():
-            if p.is_dir():
-                suggested = str(p.parent / f"{p.name}.timenc")
-            else:
-                suggested = str(p.parent / f"{p.stem}.timenc")
-            self.encrypt_output_entry.delete(0, tk.END)
-            self.encrypt_output_entry.insert(0, suggested)
+        """Füllt das Ausgabefeld, wenn es leer ist."""
+        if not self.enc_output.text().strip():
+            suggestion = self._get_suggested_enc_output()
+            if suggestion:
+                self.enc_output.setText(suggestion)
 
     def _autosuggest_decrypt_output(self):
-        inp = self.decrypt_input_entry.get().strip()
-        cur_out = self.decrypt_output_entry.get().strip()
-        if not inp or cur_out:
+        """Schlägt den Ordner der Eingabedatei als Ausgabeordner vor."""
+        in_path_str = self.dec_input.text().strip()
+        if not in_path_str or not self.dec_output.text().strip():
+            p = Path(in_path_str)
+            if p.is_file():
+                self.dec_output.setText(str(p.parent))
+            elif p.is_dir(): # Sollte nicht passieren, aber sicher ist sicher
+                self.dec_output.setText(str(p))
+
+    # --- Krypto-Aktions-Handler (mit Threading) ---
+
+    def _run_encrypt(self):
+        """Startet den Verschlüsselungs-Thread."""
+        input_path = self.enc_input.text().strip()
+        output_file = self.enc_output.text().strip()
+        password = self.enc_pwd.text() # .strip() könnte gewollt sein
+        keyfile_path = self.enc_keyfile.text().strip() or None
+
+        if not input_path or not output_file or not password:
+            self.show_error("Validierung fehlgeschlagen", "Eingabepfad, Ausgabepfad und Passwort sind erforderlich.")
             return
-        p = Path(inp)
-        if p.exists() and p.is_file():
-            suggested = str(p.parent / f"{p.stem}_entschluesselt")
-            self.decrypt_output_entry.delete(0, tk.END)
-            self.decrypt_output_entry.insert(0, suggested)
 
-    # -----------------------
-    # Actions
-    # -----------------------
-    def gui_encrypt(self):
-        if not self.validate_encrypt_inputs():
+        # encrypt ist global definiert
+        self.run_task(encrypt, input_path, output_file, password, keyfile_path)
+
+    def _run_decrypt(self):
+        """Startet den Entschlüsselungs-Thread."""
+        input_file = self.dec_input.text().strip()
+        out_dir = self.dec_output.text().strip()
+        password = self.dec_pwd.text()
+        keyfile_path = self.dec_keyfile.text().strip() or None
+
+        if not input_file or not out_dir or not password:
+            self.show_error("Validierung fehlgeschlagen", "Eingabedatei, Zielordner und Passwort sind erforderlich.")
             return
-        try:
-            self.set_status("⏳ Verschlüssele...")
-            self.encrypt_btn.configure(state="disabled", text="Verschlüssele...")
-            self.root.update()
-            try:
-                result = encrypt(self.encrypt_input_entry.get().strip(), self.encrypt_output_entry.get().strip(), self.encrypt_pwd_entry.get(), self.encrypt_keyfile_entry.get().strip() or None)
-                messagebox.showinfo("Erfolg", result)
-                self.set_status("✅ Verschlüsselung erfolgreich")
-                self.encrypt_pwd_entry.delete(0, tk.END)
-            except FileExistsError as fe:
-                messagebox.showerror("Fehler", str(fe))
-                self.set_status("❌ Fehler bei der Verschlüsselung")
-            except Exception:
-                messagebox.showerror("Fehler", "Verschlüsselung fehlgeschlagen.")
-                self.set_status("❌ Fehler bei der Verschlüsselung")
-        finally:
-            self.encrypt_btn.configure(state="normal", text="🚀 Verschlüsseln")
+            
+        # decrypt ist global definiert
+        self.run_task(decrypt, input_file, out_dir, password, keyfile_path)
 
-    def gui_decrypt(self):
-        if not self.validate_decrypt_inputs():
+    def run_task(self, func, *args, **kwargs):
+        """Hilfsfunktion zum Starten einer Aufgabe im Worker-Thread."""
+        if self.thread is not None and self.thread.isRunning():
+            self.show_error("Beschäftigt", "Bitte warten Sie, bis die aktuelle Operation abgeschlossen ist.")
             return
-        try:
-            self.set_status("⏳ Entschlüssele...")
-            self.decrypt_btn.configure(state="disabled", text="Entschlüssele...")
-            self.root.update()
-            try:
-                result = decrypt(self.decrypt_input_entry.get().strip(), self.decrypt_output_entry.get().strip(), self.decrypt_pwd_entry.get(), self.decrypt_keyfile_entry.get().strip() or None)
-                messagebox.showinfo("Erfolg", result)
-                self.set_status("✅ Entschlüsselung erfolgreich")
-                self.decrypt_pwd_entry.delete(0, tk.END)
-            except FileExistsError as fe:
-                messagebox.showerror("Fehler", str(fe))
-                self.set_status("❌ Fehler bei der Entschlüsselung")
-            except Exception:
-                messagebox.showerror("Fehler", "Entschlüsselung fehlgeschlagen.")
-                self.set_status("❌ Fehler bei der Entschlüsselung")
-        finally:
-            self.decrypt_btn.configure(state="normal", text="🚀 Entschlüsseln")
 
-    # -----------------------
-    # Validation + misc
-    # -----------------------
-    def validate_encrypt_inputs(self) -> bool:
-        inp = self.encrypt_input_entry.get().strip()
-        out = self.encrypt_output_entry.get().strip()
-        pwd = self.encrypt_pwd_entry.get()
-        if not inp:
-            messagebox.showerror("Fehler", "Bitte Eingabepfad angeben")
-            return False
-        if not Path(inp).exists():
-            messagebox.showerror("Fehler", "Eingabepfad existiert nicht")
-            return False
-        if not out:
-            messagebox.showerror("Fehler", "Bitte Ausgabepfad angeben")
-            return False
-        if Path(out).exists():
-            messagebox.showerror("Fehler", "Ausgabedatei existiert bereits (verhindert Überschreiben). Bitte wählen Sie einen anderen Namen oder löschen Sie die bestehende Datei.")
-            return False
-        if not pwd:
-            messagebox.showerror("Fehler", "Bitte Passwort eingeben")
-            return False
-        if len(pwd) < 8:
-            # nur Hinweis, nicht erzwingen - besser Hinweis zur Stärke
-            if not messagebox.askyesno("Schwaches Passwort", "Das Passwort ist kurz (<8). Fortfahren?"):
-                return False
-        return True
+        # UI deaktivieren
+        self.set_ui_enabled(False)
+        self.set_status(f"⏳ Arbeite... (Argon2 KDF läuft)")
 
-    def validate_decrypt_inputs(self) -> bool:
-        inp = self.decrypt_input_entry.get().strip()
-        out = self.decrypt_output_entry.get().strip()
-        pwd = self.decrypt_pwd_entry.get()
-        if not inp:
-            messagebox.showerror("Fehler", "Bitte Eingabedatei angeben")
-            return False
-        if not Path(inp).exists():
-            messagebox.showerror("Fehler", "Eingabedatei existiert nicht")
-            return False
-        if not out:
-            messagebox.showerror("Fehler", "Bitte Zielordner angeben")
-            return False
-        if not pwd:
-            messagebox.showerror("Fehler", "Bitte Passwort eingeben")
-            return False
-        if not inp.lower().endswith('.timenc'):
-            messagebox.showerror("Fehler", "Die Eingabedatei muss eine .timenc Datei sein")
-            return False
-        return True
+        # Thread und Worker erstellen
+        self.thread = QThread()
+        self.worker = Worker(func, *args, **kwargs) # func ist z.B. die globale 'encrypt'-Funktion
+        self.worker.moveToThread(self.thread)
 
-    def set_status(self, text: str):
-        self.status_label.configure(text=text)
+        # Signale verbinden
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self._on_task_finished)
+        self.worker.error.connect(self._on_task_error)
+        
+        # Aufräumen nach Abschluss
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
+        
+        # *** HIER IST DER FIX EINGEFÜGT ***
+        self.thread.finished.connect(self._cleanup_thread)
 
-    def run(self):
-        self.root.mainloop()
+        # Start
+        self.thread.start()
 
-# -----------------------
-# Entrypoint
-# -----------------------
+    def _on_task_finished(self, message: str):
+        """Wird aufgerufen, wenn der Worker erfolgreich war."""
+        self.set_status(f"✅ Erfolg: {message}")
+        self.set_ui_enabled(True)
+        QMessageBox.information(self, "Erfolg", message)
+
+    def _on_task_error(self, error_message: str):
+        """Wird aufgerufen, wenn der Worker einen Fehler hatte."""
+        self.set_status(f"❌ Fehler: {error_message}")
+        self.set_ui_enabled(True)
+        self.show_error("Operation fehlgeschlagen", error_message)
+
+    # *** HIER IST DER FIX EINGEFÜGT ***
+    def _cleanup_thread(self):
+        """Setzt die Thread-Referenzen zurück, nachdem sie beendet wurden."""
+        self.thread = None
+        self.worker = None
+
+    def set_ui_enabled(self, enabled: bool):
+        """Aktiviert oder deaktiviert die Haupt-Buttons und Tabs."""
+        self.enc_button.setEnabled(enabled)
+        self.dec_button.setEnabled(enabled)
+        self.tabs.setEnabled(enabled)
+        if enabled:
+            self.enc_button.setText("🚀 Verschlüsseln")
+            self.dec_button.setText("🚀 Entschlüsseln")
+        else:
+            self.enc_button.setText("⏳ Verschlüssle...")
+            self.dec_button.setText("⏳ Entschlüssle...")
+
+    # --- Hilfsfunktionen ---
+
+    def set_status(self, message: str, timeout: int = 5000):
+        """Setzt die Nachricht in der Statusleiste."""
+        self.status_bar.showMessage(message, timeout)
+
+    def show_error(self, title: str, message: str):
+        """Zeigt eine standardisierte Fehlermeldung."""
+        QMessageBox.critical(self, title, message)
+
+    def closeEvent(self, event):
+        """Stellt sicher, dass der Thread beendet wird, wenn das Fenster geschlossen wird."""
+        if self.thread is not None and self.thread.isRunning():
+            self.thread.quit()
+            self.thread.wait(1000) # Warte max 1 Sekunde
+        event.accept()
+
+
+# --- Anwendung starten ---
 if __name__ == "__main__":
-    if ctk is None:
-        print("Fehler: CustomTkinter ist nicht verfügbar. Bitte installieren: pip install customtkinter tkinterdnd2")
-        sys.exit(1)
-    try:
-        app = ModernTimencGUI()
-        app.run()
-    except Exception as e:
-        print("Fehler beim Starten der Anwendung.")
-        sys.exit(1)
+    app = QApplication(sys.argv)
+    app.setStyleSheet(APP_STYLESHEET) # Style anwenden
+
+    window = TimencApp()
+    window.show()
+
+    sys.exit(app.exec())
