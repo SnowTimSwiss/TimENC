@@ -18,7 +18,7 @@ from functools import partial
 # -------------------------------------------------------------------
 
 # Application version - easily changeable here
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 
 # Encryption format version - should remain stable for compatibility
 ENCRYPTION_FORMAT_VERSION = 2
