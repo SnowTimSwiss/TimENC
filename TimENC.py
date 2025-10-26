@@ -16,10 +16,10 @@ from functools import partial
 try:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QTabWidget, QLabel, QLineEdit, QPushButton, QFormLayout,
+        QStackedWidget, QLabel, QLineEdit, QPushButton, QFormLayout,
         QFileDialog, QMessageBox, QStatusBar, QFrame, QComboBox
     )
-    from PySide6.QtCore import QThread, QObject, Signal, Slot, Qt, QSettings
+    from PySide6.QtCore import QThread, QObject, Signal, Slot, Qt, QSettings, QSize
     from PySide6.QtGui import QDragEnterEvent, QDropEvent
 except ImportError:
     print("Fehler: PySide6 nicht gefunden.")
@@ -48,10 +48,10 @@ LANGUAGES = {
         'dialog_title_error': "Fehler",
         'dialog_title_success': "Erfolg",
         'dialog_error_prefix': "Ein Fehler ist aufgetreten:\n\n{message}",
-        # Tabs
-        'tab_encrypt': "🔒 Verschlüsseln",
-        'tab_decrypt': "🔓 Entschlüsseln",
-        'tab_settings': "⚙️ Einstellungen",
+        # Tabs/Navigation
+        'nav_encrypt': "🔒 Verschlüsseln",
+        'nav_decrypt': "🔓 Entschlüsseln",
+        'nav_settings': "⚙️ Einstellungen",
         # UI Elemente (Buttons, Labels, Platzhalter)
         'label_file_folder': "📁 Datei / Ordner:",
         'label_output_file': "💾 Ausgabedatei:",
@@ -118,10 +118,10 @@ LANGUAGES = {
         'dialog_title_error': "Error",
         'dialog_title_success': "Success",
         'dialog_error_prefix': "An error occurred:\n\n{message}",
-        # Tabs
-        'tab_encrypt': "🔒 Encrypt",
-        'tab_decrypt': "🔓 Decrypt",
-        'tab_settings': "⚙️ Settings",
+        # Tabs/Navigation
+        'nav_encrypt': "🔒 Encrypt",
+        'nav_decrypt': "🔓 Decrypt",
+        'nav_settings': "⚙️ Settings",
         # UI Elemente (Buttons, Labels, Platzhalter)
         'label_file_folder': "📁 File / Folder:",
         'label_output_file': "💾 Output File:",
@@ -213,7 +213,7 @@ class LanguageManager:
 # ---------------------------
 MAGIC = b"TIMENC"
 VERSION = 2 #Version of de/encrypting logic which hopefully will remain interoperable
-APP_VERSION = "1.1.0"  # Application version
+APP_VERSION = "1.1.1"  # Application version
 
 # ---  Argon2 defaults ---
 ARGON2_TIME = 4
@@ -610,133 +610,255 @@ def generate_keyfile(path: str, size: int = 32, **kwargs) -> str:
 # -------------------------------------------------------------------
 
 APP_STYLESHEET = """
+/* Haupt-Hintergrund */
 QWidget {
-    background-color: #1A1A1A; /* Dunkler Hintergrund */
-    color: #E0E0E0; /* Heller Text */
+    background-color: #1A1A1A;
+    color: #E0E0E0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-size: 14px;
 }
 
 QMainWindow {
-    background-color: #121212; /* Noch dunklerer Haupt-Hintergrund */
+    background-color: #1A1A1A;
 }
 
-QTabWidget::pane {
-    border: none;
-    background-color: #1E1E1E; /* Hintergrund des Tab-Inhalts */
-    border-radius: 8px;
+/* ----------------- Linke Navigationsleiste ----------------- */
+QWidget#NavWidget {
+    background-color: #1E1E1E;
+    border-right: 1px solid #333333;
 }
 
-QTabBar::tab {
-    background: #1E1E1E;
-    color: #AAAAAA;
-    padding: 12px 24px;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-    font-weight: bold;
-    min-width: 150px;
-}
-
-QTabBar::tab:selected {
-    background: #2B2B2B; /* Aktiver Tab etwas heller */
-    color: #FFFFFF;
-}
-
-QTabBar::tab:hover {
-    background: #333333;
-}
-
-/* Haupt-Container-Boxen in den Tabs */
-QFrame#TabContainer {
-    background-color: #2B2B2B;
-    border-radius: 8px;
-    padding: 10px;
-}
-
-QLabel {
-    background-color: transparent;
-}
-
+/* Titel in der Nav-Leiste */
 QLabel#Header {
     font-size: 24px;
     font-weight: bold;
     color: #FFFFFF;
-    padding-bottom: 5px;
+    padding: 20px 15px;
 }
 
+/* ----------------- Rechter Inhaltsbereich ----------------- */
+
+/* Seitentitel */
+QLabel#PageHeader {
+    font-size: 28px;
+    font-weight: 600;
+    color: #FFFFFF;
+    padding-bottom: 10px;
+}
+
+/* Formular-Container */
+QFrame#TabContainer {
+    background-color: #2B2B2B;
+    border-radius: 8px;
+    padding: 20px;
+    color: #E0E0E0;
+}
+
+/* Labels im Formular */
+QLabel {
+    color: #E0E0E0;
+    background-color: transparent;
+}
+
+/* Sub-Header (grau) */
 QLabel#SubHeader {
     font-size: 13px;
     color: #AAAAAA;
     padding-bottom: 15px;
 }
 
+/* ----------------- Eingabefelder ----------------- */
 QLineEdit, QComboBox {
     background-color: #333333;
     border: 1px solid #444444;
     border-radius: 5px;
-    padding: 10px;
+    padding: 8px 12px;
     color: #E0E0E0;
+    selection-background-color: #007ACC;
 }
 
 QLineEdit:focus, QComboBox:focus {
-    border: 1px solid #007ACC; /* Blauer Akzent bei Fokus */
+    border: 1px solid #007ACC;
 }
 
+QLineEdit:disabled, QComboBox:disabled {
+    background-color: #2A2A2A;
+    color: #888888;
+}
+
+/* Dropdown-Styling */
 QComboBox::drop-down {
     border: none;
+    width: 20px;
 }
+
 QComboBox::down-arrow {
-    image: url(data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23AAAAAA'><path d='M0 3 L6 9 L12 3 Z'/></svg>);
+    image: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #AAAAAA;
+    width: 0px;
+    height: 0px;
 }
+
 QComboBox QAbstractItemView {
     background-color: #333333;
     border: 1px solid #444444;
     selection-background-color: #007ACC;
     color: #E0E0E0;
+    outline: none;
 }
 
+/* ----------------- Button-Styling ----------------- */
 
+/* Standard-Button (sekundär) */
 QPushButton {
-    background-color: #444444;
+    background-color: #333333;
     color: #E0E0E0;
-    border: none;
-    padding: 10px 16px;
+    border: 1px solid #555555;
+    padding: 8px 16px;
     border-radius: 5px;
-    font-weight: bold;
+    font-weight: normal;
 }
 
 QPushButton:hover {
-    background-color: #555555;
+    background-color: #404040;
+    border: 1px solid #666666;
 }
 
-/* Der Haupt-Aktionsbutton (Blau) */
+QPushButton:pressed {
+    background-color: #505050;
+}
+
+QPushButton:disabled {
+    background-color: #2A2A2A;
+    color: #888888;
+    border: 1px solid #444444;
+}
+
+/* Navigations-Buttons */
+QPushButton#NavButton {
+    background-color: transparent;
+    border: none;
+    color: #AAAAAA;
+    padding: 12px 20px;
+    font-size: 15px;
+    font-weight: bold;
+    text-align: left;
+    border-radius: 0px;
+    margin: 2px 0px;
+}
+
+QPushButton#NavButton:hover {
+    background-color: #333333;
+    color: #FFFFFF;
+}
+
+QPushButton#NavButton:checked {
+    background-color: #2B2B2B;
+    color: #FFFFFF;
+    border-left: 3px solid #007ACC;
+    border-top: none;
+    border-right: none;
+    border-bottom: none;
+}
+
+/* Haupt-Aktionsbutton */
 QPushButton#ActionButton {
     background-color: #007ACC;
-    color: white;
+    color: #FFFFFF;
     font-size: 16px;
-    padding: 12px;
+    font-weight: bold;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 5px;
 }
 
 QPushButton#ActionButton:hover {
     background-color: #005FA3;
 }
 
-/* Button zum Anzeigen des Passworts */
-QPushButton#TogglePasswordButton {
-    background-color: #333333;
-    color: #AAAAAA;
-    padding: 8px;
-}
-QPushButton#TogglePasswordButton:hover {
-    background-color: #444444;
+QPushButton#ActionButton:pressed {
+    background-color: #004D84;
 }
 
-QStatusBar {
+QPushButton#ActionButton:disabled {
+    background-color: #1E3A5C;
+    color: #888888;
+}
+
+/* Passwort-Toggle-Button */
+QPushButton#TogglePasswordButton {
+    background-color: #444444;
     color: #AAAAAA;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 0px 5px 5px 0px;
+    margin: 0px;
+    min-width: 60px;
+}
+
+QPushButton#TogglePasswordButton:hover {
+    background-color: #555555;
+    color: #E0E0E0;
+}
+
+/* ----------------- Statusleiste ----------------- */
+QStatusBar {
+    background-color: #1E1E1E;
+    color: #AAAAAA;
+    border-top: 1px solid #333333;
+    padding: 8px;
 }
 
 QStatusBar::item {
     border: none;
+}
+
+/* ----------------- Layout-Hilfen ----------------- */
+QHBoxLayout, QVBoxLayout, QFormLayout {
+    background-color: transparent;
+}
+
+/* Scrollbars */
+QScrollBar:vertical {
+    background: #2B2B2B;
+    width: 12px;
+    margin: 0px;
+}
+
+QScrollBar::handle:vertical {
+    background: #444444;
+    border-radius: 6px;
+    min-height: 20px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #555555;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    background: #2B2B2B;
+    height: 12px;
+    margin: 0px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #444444;
+    border-radius: 6px;
+    min-width: 20px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background: #555555;
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
 }
 """
 
@@ -812,37 +934,31 @@ class TimencApp(QMainWindow):
 
         # APP_VERSION ist jetzt eine globale Variable von oben
         self.setWindowTitle(self.lang_manager.tr('app_title', version=APP_VERSION))
-        self.setGeometry(100, 100, 800, 700) # Etwas höher für neuen Tab
-        self.setMinimumSize(700, 650)
+        self.setGeometry(100, 100, 950, 700) # Etwas breiter für das neue Layout
+        self.setMinimumSize(800, 650)
 
-        # Zentrales Widget und Hauptlayout
+        # Zentrales Widget und Hauptlayout (jetzt Horizontal)
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # 1. Header
-        self._create_header(main_layout)
+        # 1. Linke Navigationsleiste erstellen
+        self._create_nav_ui()
+        
+        # 2. Rechten Inhaltsbereich (Stacked) erstellen
+        self._create_content_ui()
 
-        # 2. Tab-Widget
-        self.tabs = QTabWidget()
-        main_layout.addWidget(self.tabs)
+        # UI-Teile zum Hauptlayout hinzufügen
+        main_layout.addWidget(self.nav_widget)
+        main_layout.addWidget(self.stacked_widget)
 
-        # 3. Tabs erstellen
-        self.encrypt_tab = QWidget()
-        self.decrypt_tab = QWidget()
-        self.settings_tab = QWidget() # NEU
+        # Stretch-Faktoren: Nav (fix) vs Inhalt (flexibel)
+        main_layout.setStretch(0, 2) # Nav-Leiste (ca. 20-30%)
+        main_layout.setStretch(1, 7) # Inhaltsbereich (ca. 70-80%)
 
-        self.tabs.addTab(self.encrypt_tab, self.lang_manager.tr('tab_encrypt'))
-        self.tabs.addTab(self.decrypt_tab, self.lang_manager.tr('tab_decrypt'))
-        self.tabs.addTab(self.settings_tab, self.lang_manager.tr('tab_settings')) # NEU
-
-        # UI für jeden Tab erstellen
-        self._create_encrypt_ui()
-        self._create_decrypt_ui()
-        self._create_settings_ui() # NEU
-
-        # 4. Statusleiste
+        # 3. Statusleiste
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.set_status(self.lang_manager.tr('status_ready', version=APP_VERSION))
@@ -853,23 +969,94 @@ class TimencApp(QMainWindow):
         self.dec_input.file_dropped.connect(self._autosuggest_decrypt_output)
         self.dec_input.textChanged.connect(self._autosuggest_decrypt_output)
 
-    def _create_header(self, layout: QVBoxLayout):
-        """Erstellt den Titel und Untertitel."""
+        # Standard-Seite setzen
+        self._navigate(0, self.nav_encrypt_btn)
+
+
+    def _create_nav_ui(self):
+        """Erstellt die linke Navigationsleiste."""
+        self.nav_widget = QWidget()
+        self.nav_widget.setObjectName("NavWidget")
+        self.nav_widget.setMaximumWidth(240)
+        
+        nav_layout = QVBoxLayout(self.nav_widget)
+        nav_layout.setContentsMargins(0, 0, 0, 10) # Unten etwas Platz
+        nav_layout.setSpacing(5)
+
+        # Titel in der Nav-Leiste
         title = QLabel("Timenc")
         title.setObjectName("Header")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        nav_layout.addWidget(title)
+
+        # Navigations-Buttons
+        self.nav_encrypt_btn = QPushButton(self.lang_manager.tr('nav_encrypt'))
+        self.nav_encrypt_btn.setObjectName("NavButton")
+        self.nav_encrypt_btn.setCheckable(True)
+
+        self.nav_decrypt_btn = QPushButton(self.lang_manager.tr('nav_decrypt'))
+        self.nav_decrypt_btn.setObjectName("NavButton")
+        self.nav_decrypt_btn.setCheckable(True)
+
+        self.nav_settings_btn = QPushButton(self.lang_manager.tr('nav_settings'))
+        self.nav_settings_btn.setObjectName("NavButton")
+        self.nav_settings_btn.setCheckable(True)
+
+        # Signale verbinden
+        self.nav_encrypt_btn.clicked.connect(lambda: self._navigate(0, self.nav_encrypt_btn))
+        self.nav_decrypt_btn.clicked.connect(lambda: self._navigate(1, self.nav_decrypt_btn))
+        self.nav_settings_btn.clicked.connect(lambda: self._navigate(2, self.nav_settings_btn))
+
+        # Zum Layout hinzufügen
+        nav_layout.addWidget(self.nav_encrypt_btn)
+        nav_layout.addWidget(self.nav_decrypt_btn)
+        nav_layout.addStretch() # Drückt Einstellungen nach unten
+        nav_layout.addWidget(self.nav_settings_btn)
+
+    def _create_content_ui(self):
+        """Erstellt den rechten QStackedWidget-Inhaltsbereich."""
+        self.stacked_widget = QStackedWidget()
+
+        # Seiten-Widgets erstellen
+        self.encrypt_page = QWidget()
+        self.decrypt_page = QWidget()
+        self.settings_page = QWidget()
         
-        subtitle = QLabel(self.lang_manager.tr('app_subtitle'))
-        subtitle.setObjectName("SubHeader")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # UI-Builder für jede Seite aufrufen
+        self._create_encrypt_ui(self.encrypt_page)
+        self._create_decrypt_ui(self.decrypt_page)
+        self._create_settings_ui(self.settings_page)
 
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
+        # Seiten zum Stack hinzufügen (Reihenfolge muss zu _navigate passen)
+        self.stacked_widget.addWidget(self.encrypt_page)  # Index 0
+        self.stacked_widget.addWidget(self.decrypt_page) # Index 1
+        self.stacked_widget.addWidget(self.settings_page) # Index 2
 
-    def _create_encrypt_ui(self):
-        """Erstellt die UI für den "Verschlüsseln"-Tab."""
-        layout = QVBoxLayout(self.encrypt_tab)
-        layout.setContentsMargins(15, 15, 15, 15)
+    def _navigate(self, index: int, btn: QPushButton):
+        """Wechselt die Inhaltsseite und markiert den aktiven Button."""
+        # 1. Inhaltsseite wechseln
+        self.stacked_widget.setCurrentIndex(index)
+        
+        # 2. Alle Buttons "deaktivieren"
+        self.nav_encrypt_btn.setChecked(False)
+        self.nav_decrypt_btn.setChecked(False)
+        self.nav_settings_btn.setChecked(False)
+        
+        # 3. Nur den geklickten Button "aktivieren"
+        btn.setChecked(True)
+
+    # --- UI Builder für Inhalts-Seiten ---
+    # (Diese wurden angepasst, um 'parent_widget' zu akzeptieren)
+
+    def _create_encrypt_ui(self, parent_widget: QWidget):
+        """Erstellt die UI für die "Verschlüsseln"-Seite."""
+        layout = QVBoxLayout(parent_widget)
+        layout.setContentsMargins(25, 20, 25, 20) # Außenabstand für die Seite
+
+        # Seitentitel
+        page_title = QLabel(self.lang_manager.tr('nav_encrypt'))
+        page_title.setObjectName("PageHeader")
+        layout.addWidget(page_title)
 
         # Container für bessere Optik
         container = QFrame()
@@ -934,10 +1121,15 @@ class TimencApp(QMainWindow):
         self.enc_button.clicked.connect(self._run_encrypt)
         layout.addWidget(self.enc_button)
 
-    def _create_decrypt_ui(self):
-        """Erstellt die UI für den "Entschlüsseln"-Tab."""
-        layout = QVBoxLayout(self.decrypt_tab)
-        layout.setContentsMargins(15, 15, 15, 15)
+    def _create_decrypt_ui(self, parent_widget: QWidget):
+        """Erstellt die UI für die "Entschlüsseln"-Seite."""
+        layout = QVBoxLayout(parent_widget)
+        layout.setContentsMargins(25, 20, 25, 20)
+
+        # Seitentitel
+        page_title = QLabel(self.lang_manager.tr('nav_decrypt'))
+        page_title.setObjectName("PageHeader")
+        layout.addWidget(page_title)
 
         container = QFrame()
         container.setObjectName("TabContainer")
@@ -1001,10 +1193,15 @@ class TimencApp(QMainWindow):
         self.dec_button.clicked.connect(self._run_decrypt)
         layout.addWidget(self.dec_button)
 
-    def _create_settings_ui(self):
-        """Erstellt die UI für den "Einstellungen"-Tab."""
-        layout = QVBoxLayout(self.settings_tab)
-        layout.setContentsMargins(15, 15, 15, 15)
+    def _create_settings_ui(self, parent_widget: QWidget):
+        """Erstellt die UI für die "Einstellungen"-Seite."""
+        layout = QVBoxLayout(parent_widget)
+        layout.setContentsMargins(25, 20, 25, 20)
+
+        # Seitentitel
+        page_title = QLabel(self.lang_manager.tr('nav_settings'))
+        page_title.setObjectName("PageHeader")
+        layout.addWidget(page_title)
 
         container = QFrame()
         container.setObjectName("TabContainer")
