@@ -18,7 +18,7 @@ from functools import partial
 # -------------------------------------------------------------------
 
 # Application version - easily changeable here
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 
 # Encryption format version - should remain stable for compatibility
 ENCRYPTION_FORMAT_VERSION = 2
@@ -1290,17 +1290,14 @@ class TimencApp(QMainWindow):
         dec_pwd_layout.addWidget(self.dec_pwd_toggle_btn)
         container_layout.addRow(QLabel(self.lang_manager.tr('label_password')), dec_pwd_layout)
 
-        # 4. Keyfile
+        # 4. Keyfile - NUR "Auswählen" Button, KEIN "Generieren" Button
         self.dec_keyfile = DropLineEdit(self.lang_manager.tr('placeholder_drop_keyfile'))
         dec_keyfile_select_btn = QPushButton(self.lang_manager.tr('button_select'))
-        dec_keyfile_gen_btn = QPushButton(self.lang_manager.tr('button_generate'))
         dec_keyfile_select_btn.clicked.connect(partial(self._choose_keyfile, self.dec_keyfile))
-        dec_keyfile_gen_btn.clicked.connect(partial(self._generate_keyfile, self.dec_keyfile))
 
         dec_keyfile_layout = QHBoxLayout()
         dec_keyfile_layout.addWidget(self.dec_keyfile)
         dec_keyfile_layout.addWidget(dec_keyfile_select_btn)
-        dec_keyfile_layout.addWidget(dec_keyfile_gen_btn)
         container_layout.addRow(QLabel(self.lang_manager.tr('label_keyfile')), dec_keyfile_layout)
 
         layout.addWidget(container)
