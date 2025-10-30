@@ -1,14 +1,11 @@
 name: Build & Attach Binaries to Release
-
 permissions:
   contents: write
   packages: write
   issues: write
-
 on:
   release:
     types: [published]
-
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -39,6 +36,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Vollständiger Clone für alle Dateien
+          submodules: true  # Falls Submodules (optional)
+      - name: List files (debug)  # Temporär: Zeigt Dateien an, um zu prüfen
+        run: |
+          echo "=== Repository files ==="
+          ls -la
+          echo "=== Python files ==="
+          find . -name "*.py" -type f
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -49,6 +55,12 @@ jobs:
           pip install PySide6 cryptography argon2-cffi pyinstaller
       - name: Build executable
         run: |
+          # Prüfe, ob timenc.py da ist
+          if [ ! -f "timenc.py" ]; then
+            echo "ERROR: timenc.py not found! Available files:"
+            ls -la *.py
+            exit 1
+          fi
           pyinstaller --onefile --windowed --name TimENC timenc.py
       - name: Create .deb
         run: |
@@ -100,6 +112,9 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Auch hier: Vollständiger Clone (Bonus)
+          submodules: true
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
