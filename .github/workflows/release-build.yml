@@ -1,29 +1,25 @@
-name: Build & Attach Binaries to Release
+name: Build & Attach Single Binaries to Release
 
-# Fordert nur die Rechte an, die wirklich benötigt werden
 permissions:
-  contents: write # Erforderlich, um Assets zu einem Release hochzuladen
+  contents: write 
 
 on:
   release:
-    types: [published] # Wird nur ausgeführt, wenn du ein Release veröffentlichst
+    types: [published] 
 
-# Verhindert, dass Workflows sich überschneiden, falls ein Release schnell
-# bearbeitet und neu veröffentlicht wird.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Ein einziger Job, der dank der Matrix auf allen 3 Systemen parallel läuft
   build-and-upload:
     
     strategy:
-      fail-fast: false # Stellt sicher, dass auch bei Fehlschlag eines OS die anderen weiterlaufen
+      fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-14] # macos-14 für Apple Silicon (oder macos-latest)
+        os: [windows-latest, ubuntu-latest, macos-14]
 
-    runs-on: ${{ matrix.os }} # Nutzt das Betriebssystem aus der Matrix
+    runs-on: ${{ matrix.os }} 
 
     steps:
       # --- 1. Allgemeine Setup-Schritte (laufen auf allen Systemen) ---
@@ -31,7 +27,7 @@ jobs:
       - name: Code auschecken
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Nötig, um den Release-Tag-Namen korrekt zu lesen
+          fetch-depth: 0 
 
       - name: Python 3.12 einrichten
         uses: actions/setup-python@v4
@@ -43,19 +39,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install PySide6 cryptography argon2-cffi pyinstaller
 
-      # --- 2. Windows Build & Upload (läuft nur auf Windows) ---
-
+      # ------------------------------------------------------------------
+      # --- 2. Windows Build & Upload (.exe)
+      # ------------------------------------------------------------------
+      
       - name: (Windows) Build .exe
         if: matrix.os == 'windows-latest'
-        shell: pwsh # KORREKTUR: Explizit PowerShell verwenden
+        shell: pwsh 
         run: |
           $ICON_OPTION = ""
+          # Prüfe auf das Windows-Icon (.ico)
           if (Test-Path "images/TimENC-icon.ico") {
             $ICON_OPTION = "--icon=images/TimENC-icon.ico"
           } else {
             Write-Host "No ICO icon found, building without icon"
           }
-          # PyInstaller wird mit PowerShell-Variablen aufgerufen
+          # PyInstaller mit --onefile für die einzelne .exe
           pyinstaller --onefile --windowed --name TimENC $ICON_OPTION timenc.py
 
       - name: (Windows) Upload .exe
@@ -69,12 +68,15 @@ jobs:
           asset_name: TimENC-Windows.exe
           asset_content_type: application/octet-stream
 
-      # --- 3. Linux Build & Upload (läuft nur auf Linux) ---
-
+      # ------------------------------------------------------------------
+      # --- 3. Linux Build & Upload (AppImage)
+      # ------------------------------------------------------------------
+      
       - name: (Linux) Build Executable
         if: matrix.os == 'ubuntu-latest'
         run: |
           ICON_OPTION=""
+          # Prüfe auf das Linux-Icon (.png)
           if [ -f images/TimENC-icon.png ]; then
             ICON_OPTION="--icon=images/TimENC-icon.png"
           else
@@ -82,61 +84,36 @@ jobs:
           fi
           pyinstaller --onefile --windowed --name TimENC $ICON_OPTION timenc.py
 
-      - name: (Linux) Create .deb Paket
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ruby ruby-dev build-essential rpm
-          sudo gem install fpm
-          
-          # Paketstruktur erstellen
-          mkdir -p package/usr/bin package/usr/share/applications package/usr/share/icons/hicolor/256x256/apps
-          cp dist/TimENC package/usr/bin/
-          
-          if [ -f images/TimENC-icon.png ]; then
-            cp images/TimENC-icon.png package/usr/share/icons/hicolor/256x256/apps/TimENC.png
-          fi
-          
-          # .desktop-Datei erstellen
-          cat > package/usr/share/applications/TimENC.desktop << EOF
-          [Desktop Entry]
-          Name=TimENC
-          Exec=TimENC
-          $( [ -f images/TimENC-icon.png ] && echo "Icon=TimENC" )
-          Type=Application
-          Categories=Utility;
-          EOF
-          
-          # fpm ausführen (erstellt .deb im Root-Verzeichnis)
-          # HINWEIS: fpm erstellt den Dateinamen mit Underscores, z.B. timenc_1.0.0_amd64.deb
-          fpm -s dir -t deb -n timenc -v ${{ github.event.release.tag_name }} -C package --description "Modern encryption tool" .
-
       - name: (Linux) Create AppImage
         if: matrix.os == 'ubuntu-latest'
         run: |
+          # appimagetool herunterladen
           wget -c https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool.AppImage
           chmod +x appimagetool.AppImage
           
           mkdir -p TimENC.AppDir
+          # Executable kopieren
           cp dist/TimENC TimENC.AppDir/
           
+          # Icon kopieren (Wichtig: Muss im AppDir vorhanden sein, wenn im .desktop referenziert)
           if [ -f images/TimENC-icon.png ]; then
+            # Das Icon muss als TimENC.png im AppDir liegen
             cp images/TimENC-icon.png TimENC.AppDir/TimENC.png
+            echo "Icon file found and copied to AppDir."
+          else
+            # Wenn das Icon fehlt, wird AppImageTool eine Warnung/Fehler ausgeben
+            echo "Icon file images/TimENC-icon.png NOT found. AppImage may fail or lack an icon."
           fi
           
-          # .desktop-Datei für AppImage
-          cat > TimENC.AppDir/TimENC.desktop << 'EOF'
+          # .desktop-Datei für AppImage (Icon-Referenz hinzugefügt)
+          cat > TimENC.AppDir/TimENC.desktop << EOF
           [Desktop Entry]
           Name=TimENC
           Exec=TimENC
-          EOF
-          if [ -f images/TimENC-icon.png ]; then
-            echo "Icon=TimENC" >> TimENC.AppDir/TimENC.desktop
-          fi
-          cat >> TimENC.AppDir/TimENC.desktop << 'EOF'
+          Icon=TimENC
           Type=Application
           Categories=Utility;
-          EOF
+EOF
           
           # AppRun-Datei
           cat > TimENC.AppDir/AppRun << 'EOF'
@@ -146,69 +123,55 @@ jobs:
           EOF
           chmod +x TimENC.AppDir/AppRun
           
-          # AppImage erstellen (erstellt Datei im Root-Verzeichnis)
+          # AppImage erstellen
           ./appimagetool.AppImage --appimage-extract-and-run TimENC.AppDir TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
-
-      # KORREKTUR: Drei separate Schritte für den Linux-Upload
-
-      - name: (Linux) Upload Executable
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: dist/TimENC
-          asset_name: TimENC-Linux-Executable
-          asset_content_type: application/octet-stream
-
-      - name: (Linux) Upload .deb
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: timenc_${{ github.event.release.tag_name }}_amd64.deb # KORRIGIERTER PFAD (Root-Verzeichnis, fpm-Namenskonvention)
-          asset_name: TimENC-${{ github.event.release.tag_name }}-Ubuntu-Debian.deb
-          asset_content_type: application/vnd.debian.binary-package
 
       - name: (Linux) Upload AppImage
         if: matrix.os == 'ubuntu-latest'
+        # Setze 'continue-on-error', falls AppImageTool wegen fehlendem Icon scheitert
+        continue-on-error: true 
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage # KORRIGIERTER PFAD (Root-Verzeichnis)
+          asset_path: TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
           asset_name: TimENC-${{ github.event.release.tag_name }}-AppImage.AppImage
           asset_content_type: application/x-iso9660-appimage
 
-      # --- 4. macOS Build & Upload (läuft nur auf macOS) ---
+      # ------------------------------------------------------------------
+      # --- 4. macOS Build & Upload (.dmg)
+      # ------------------------------------------------------------------
 
       - name: (macOS) Build .app
         if: matrix.os == 'macos-14'
         run: |
           ICON_OPTION=""
+          # Prüfe auf das macOS-Icon (.icns)
           if [ -f images/TimENC-icon.icns ]; then
             ICON_OPTION="--icon=images/TimENC-icon.icns"
           else
             echo "No ICNS icon found, building without icon"
           fi
-          pyinstaller --onefile --windowed --name TimENC $ICON_OPTION timenc.py
+          
+          # KORREKTUR: '--onefile' entfernt -> erstellt 'dist/TimENC.app' Ordner
+          pyinstaller --windowed --name TimENC $ICON_OPTION timenc.py
+
+      - name: (macOS) Install create-dmg
+        if: matrix.os == 'macos-14'
+        run: brew install create-dmg
 
       - name: (macOS) Create DMG
         if: matrix.os == 'macos-14'
         run: |
-          brew install create-dmg
-          # KORREKTUR: Pfade für --icon und die Quell-App
+          # Der Befehl packt den erstellten 'dist/TimENC.app' Ordner in die .dmg
           create-dmg \
             --volname "TimENC ${{ github.event.release.tag_name }}" \
             --window-size 600 300 \
             --icon "dist/TimENC.app" 180 120 \
             --app-drop-link 420 120 \
             "TimENC-${{ github.event.release.tag_name }}.dmg" \
-            "dist/TimENC.app" # KORRIGIERTER Quellpfad
+            "dist/TimENC.app"
 
       - name: (macOS) Upload .dmg
         if: matrix.os == 'macos-14'
