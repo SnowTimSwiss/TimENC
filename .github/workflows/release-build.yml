@@ -1,5 +1,10 @@
 name: Build & Attach Binaries to Release
 
+permissions:
+  contents: write
+  packages: write
+  issues: write
+
 on:
   release:
     types: [published]
