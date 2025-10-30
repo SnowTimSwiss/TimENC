@@ -18,7 +18,7 @@ from functools import partial
 # -------------------------------------------------------------------
 
 # Application version - easily changeable here
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 
 # Encryption format version - should remain stable for compatibility
 ENCRYPTION_FORMAT_VERSION = 2
@@ -1044,7 +1044,8 @@ class DropLineEdit(QLineEdit):
 class TimencApp(QMainWindow):
     """Main application window for Timenc."""
     
-    def __init__(self, lang_manager: LanguageManager):
+    # --- MODIFIZIERT 1/4 ---
+    def __init__(self, lang_manager: LanguageManager, file_to_open: Optional[str] = None):
         super().__init__()
         self.thread = None  # Thread management
         self.worker = None  # Worker management
@@ -1092,6 +1093,16 @@ class TimencApp(QMainWindow):
 
         # Set default page
         self._navigate(0, self.nav_encrypt_btn)
+        
+        # --- MODIFIZIERT 2/4 (NEUER BLOCK) ---
+        # Handle file passed via command line
+        if file_to_open:
+            # Überprüfen, ob es eine Datei ist und (optional) ob sie auf .timenc endet
+            if os.path.isfile(file_to_open) and file_to_open.endswith(".timenc"):
+                self.dec_input.setText(file_to_open)
+                self._autosuggest_decrypt_output() # Auto-Ausfüllen des Zielordners
+                self._navigate(1, self.nav_decrypt_btn) # Wechsle zum Entschlüsseln-Tab
+        # --- ENDE MODIFIZIERUNG ---
 
     def _create_nav_ui(self):
         """Create the left navigation panel."""
@@ -1593,8 +1604,19 @@ def main():
     # Apply stylesheet
     app.setStyleSheet(APP_STYLESHEET)
 
+    # --- MODIFIZIERT 3/4 (NEUER BLOCK) ---
+    # Prüfe auf Kommandozeilen-Argumente
+    file_to_open = None
+    if len(sys.argv) > 1:
+        path_arg = sys.argv[1]
+        # Sicherstellen, dass das Argument ein existierender Dateipfad ist
+        if os.path.isfile(path_arg):
+             file_to_open = path_arg
+    # --- ENDE MODIFIZIERUNG ---
+
     # Create main window with language manager
-    window = TimencApp(lang_manager)
+    # --- MODIFIZIERT 4/4 ---
+    window = TimencApp(lang_manager, file_to_open=file_to_open)
     window.show()
 
     sys.exit(app.exec())
