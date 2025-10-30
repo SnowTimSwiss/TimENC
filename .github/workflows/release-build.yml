@@ -1,0 +1,127 @@
+name: Build & Attach Binaries to Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 cryptography argon2-cffi pyinstaller
+      - name: Build .exe
+        run: |
+          pyinstaller --onefile --windowed --name TimENC --icon=images/timenc-icon.ico timenc.py
+      - name: Upload .exe to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: dist/TimENC.exe
+          asset_name: TimENC-Windows.exe
+          asset_content_type: application/octet-stream
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 cryptography argon2-cffi pyinstaller
+      - name: Build executable
+        run: |
+          pyinstaller --onefile --windowed --name TimENC timenc.py
+      - name: Create .deb
+        run: |
+          sudo apt update
+          sudo apt install -y ruby ruby-dev build-essential rpm
+          sudo gem install fpm
+          mkdir -p package/usr/bin
+          cp dist/TimENC package/usr/bin/
+          fpm -s dir -t deb -n timenc -v ${{ github.event.release.tag_name }} -C package --description "TimENC Encryption Tool" .
+      - name: Create AppImage
+        run: |
+          wget -c https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool.AppImage
+          chmod +x appimagetool.AppImage
+          mkdir TimENC.AppDir
+          cp dist/TimENC TimENC.AppDir/
+          cp images/timenc-icon.png TimENC.AppDir/TimENC.png || echo "No PNG icon, skipping"
+          cat > TimENC.AppDir/TimENC.desktop << EOF
+          [Desktop Entry]
+          Name=TimENC
+          Exec=TimENC
+          Icon=TimENC
+          Type=Application
+          Categories=Utility;
+          EOF
+          cat > TimENC.AppDir/AppRun << 'EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          exec "${HERE}/TimENC" "$@"
+          EOF
+          chmod +x TimENC.AppDir/AppRun
+          ./appimagetool.AppImage TimENC.AppDir TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
+      - name: Upload Linux assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: |
+            dist/TimENC
+            timenc_${{ github.event.release.tag_name }}_amd64.deb
+            TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
+          asset_name: |
+            TimENC-Linux-Executable
+            TimENC-${{ github.event.release.tag_name }}-Ubuntu-Debian.deb
+            TimENC-${{ github.event.release.tag_name }}-AppImage.AppImage
+          asset_content_type: application/octet-stream
+
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 cryptography argon2-cffi pyinstaller
+      - name: Build .app
+        run: |
+          pyinstaller --onefile --windowed --name TimENC --icon=images/timenc-icon.icns timenc.py
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "TimENC ${{ github.event.release.tag_name }}" \
+            --window-size 600 300 \
+            --icon "TimENC.app" 180 120 \
+            --app-drop-link 420 120 \
+            "TimENC-${{ github.event.release.tag_name }}.dmg" \
+            "dist/"
+      - name: Upload .dmg to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: TimENC-${{ github.event.release.tag_name }}.dmg
+          asset_name: TimENC-${{ github.event.release.tag_name }}-macOS.dmg
+          asset_content_type: application/octet-stream
