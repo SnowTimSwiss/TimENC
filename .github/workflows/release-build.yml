@@ -13,7 +13,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: true
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -24,7 +23,13 @@ jobs:
           pip install PySide6 cryptography argon2-cffi pyinstaller
       - name: Build .exe
         run: |
-          pyinstaller --onefile --windowed --name TimENC --icon=images/TimENC-Icon.ico timenc.py
+          ICON_OPTION=""
+          if [ -f images/TimENC-icon.ico ]; then
+            ICON_OPTION="--icon=images/TimENC-icon.ico"
+          else
+            echo "No ICO icon found, building without icon"
+          fi
+          pyinstaller --onefile --windowed --name TimENC $ICON_OPTION timenc.py
       - name: Upload .exe to Release
         uses: actions/upload-release-asset@v1
         env:
@@ -41,7 +46,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: true
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -52,7 +56,13 @@ jobs:
           pip install PySide6 cryptography argon2-cffi pyinstaller
       - name: Build executable
         run: |
-          pyinstaller --onefile --windowed --name TimENC timenc.py
+          ICON_OPTION=""
+          if [ -f images/TimENC-icon.png ]; then
+            ICON_OPTION="--icon=images/TimENC-icon.png"
+          else
+            echo "No PNG icon found, building without icon"
+          fi
+          pyinstaller --onefile --windowed --name TimENC $ICON_OPTION timenc.py
       - name: Create .deb
         run: |
           sudo apt update
@@ -60,37 +70,58 @@ jobs:
           sudo gem install fpm
           mkdir -p package/usr/bin package/usr/share/applications package/usr/share/icons/hicolor/256x256/apps
           cp dist/TimENC package/usr/bin/
-          [ -f images/TimENC-Icon.png ] && cp images/TimENC-Icon.png package/usr/share/icons/hicolor/256x256/apps/TimENC.png || echo "No PNG icon, skipping"
+          if [ -f images/TimENC-icon.png ]; then
+            cp images/TimENC-icon.png package/usr/share/icons/hicolor/256x256/apps/TimENC.png
+          else
+            echo "No PNG icon found, skipping for .deb"
+          fi
           cat > package/usr/share/applications/TimENC.desktop << EOF
           [Desktop Entry]
           Name=TimENC
-          Exec=/usr/bin/TimENC
-          Icon=TimENC
+          Exec=TimENC
+          $( [ -f images/TimENC-icon.png ] && echo "Icon=TimENC" )
           Type=Application
           Categories=Utility;
           EOF
-          fpm -s dir -t deb -n timenc -v ${{ github.event.release.tag_name }} -C package --description "TimENC Encryption Tool" .
-      - name: Create AppImage
+          fpm -s dir -t deb -n timenc -v ${{ github.event.release.tag_name }} -C package --description "Modern encryption tool" .
+      - name: Create AppImage (without FUSE)
         run: |
+          # Download appimagetool
           wget -c https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool.AppImage
           chmod +x appimagetool.AppImage
-          mkdir TimENC.AppDir
+
+          # Create AppDir
+          mkdir -p TimENC.AppDir
           cp dist/TimENC TimENC.AppDir/
-          [ -f images/TimENC-Icon.png ] && cp images/TimENC-Icon.png TimENC.AppDir/TimENC.png || echo "No PNG icon, skipping"
-          cat > TimENC.AppDir/TimENC.desktop << EOF
+          if [ -f images/TimENC-icon.png ]; then
+            cp images/TimENC-icon.png TimENC.AppDir/TimENC.png
+          else
+            echo "No PNG icon found, skipping for AppImage"
+          fi
+
+          # Desktop file (conditional Icon line)
+          cat > TimENC.AppDir/TimENC.desktop << 'EOF'
           [Desktop Entry]
           Name=TimENC
           Exec=TimENC
-          Icon=TimENC
+          EOF
+          if [ -f images/TimENC-icon.png ]; then
+            echo "Icon=TimENC" >> TimENC.AppDir/TimENC.desktop
+          fi
+          cat >> TimENC.AppDir/TimENC.desktop << 'EOF'
           Type=Application
           Categories=Utility;
           EOF
+
+          # AppRun
           cat > TimENC.AppDir/AppRun << 'EOF'
           #!/bin/bash
           HERE="$(dirname "$(readlink -f "${0}")")"
           exec "${HERE}/TimENC" "$@"
           EOF
           chmod +x TimENC.AppDir/AppRun
+
+          # Build AppImage with extract-and-run (no FUSE needed)
           ./appimagetool.AppImage --appimage-extract-and-run TimENC.AppDir TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
       - name: Upload Linux assets
         uses: actions/upload-release-asset@v1
@@ -114,7 +145,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: true
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -125,7 +155,13 @@ jobs:
           pip install PySide6 cryptography argon2-cffi pyinstaller
       - name: Build .app
         run: |
-          pyinstaller --onefile --windowed --name TimENC --icon=images/TimENC-Icon.icns timenc.py
+          ICON_OPTION=""
+          if [ -f images/TimENC-icon.icns ]; then
+            ICON_OPTION="--icon=images/TimENC-icon.icns"
+          else
+            echo "No ICNS icon found, building without icon"
+          fi
+          pyinstaller --onefile --windowed --name TimENC $ICON_OPTION timenc.py
       - name: Create DMG
         run: |
           brew install create-dmg
