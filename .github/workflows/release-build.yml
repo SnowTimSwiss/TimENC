@@ -11,6 +11,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -21,7 +24,7 @@ jobs:
           pip install PySide6 cryptography argon2-cffi pyinstaller
       - name: Build .exe
         run: |
-          pyinstaller --onefile --windowed --name TimENC --icon=images/timenc-icon.ico timenc.py
+          pyinstaller --onefile --windowed --name TimENC --icon=images/TimENC-Icon.ico timenc.py
       - name: Upload .exe to Release
         uses: actions/upload-release-asset@v1
         env:
@@ -37,14 +40,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Vollständiger Clone für alle Dateien
-          submodules: true  # Falls Submodules (optional)
-      - name: List files (debug)  # Temporär: Zeigt Dateien an, um zu prüfen
-        run: |
-          echo "=== Repository files ==="
-          ls -la
-          echo "=== Python files ==="
-          find . -name "*.py" -type f
+          fetch-depth: 0
+          submodules: true
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -55,20 +52,23 @@ jobs:
           pip install PySide6 cryptography argon2-cffi pyinstaller
       - name: Build executable
         run: |
-          # Prüfe, ob timenc.py da ist
-          if [ ! -f "timenc.py" ]; then
-            echo "ERROR: timenc.py not found! Available files:"
-            ls -la *.py
-            exit 1
-          fi
           pyinstaller --onefile --windowed --name TimENC timenc.py
       - name: Create .deb
         run: |
           sudo apt update
           sudo apt install -y ruby ruby-dev build-essential rpm
           sudo gem install fpm
-          mkdir -p package/usr/bin
+          mkdir -p package/usr/bin package/usr/share/applications package/usr/share/icons/hicolor/256x256/apps
           cp dist/TimENC package/usr/bin/
+          [ -f images/TimENC-Icon.png ] && cp images/TimENC-Icon.png package/usr/share/icons/hicolor/256x256/apps/TimENC.png || echo "No PNG icon, skipping"
+          cat > package/usr/share/applications/TimENC.desktop << EOF
+          [Desktop Entry]
+          Name=TimENC
+          Exec=/usr/bin/TimENC
+          Icon=TimENC
+          Type=Application
+          Categories=Utility;
+          EOF
           fpm -s dir -t deb -n timenc -v ${{ github.event.release.tag_name }} -C package --description "TimENC Encryption Tool" .
       - name: Create AppImage
         run: |
@@ -76,7 +76,7 @@ jobs:
           chmod +x appimagetool.AppImage
           mkdir TimENC.AppDir
           cp dist/TimENC TimENC.AppDir/
-          cp images/timenc-icon.png TimENC.AppDir/TimENC.png || echo "No PNG icon, skipping"
+          [ -f images/TimENC-Icon.png ] && cp images/TimENC-Icon.png TimENC.AppDir/TimENC.png || echo "No PNG icon, skipping"
           cat > TimENC.AppDir/TimENC.desktop << EOF
           [Desktop Entry]
           Name=TimENC
@@ -91,7 +91,7 @@ jobs:
           exec "${HERE}/TimENC" "$@"
           EOF
           chmod +x TimENC.AppDir/AppRun
-          ./appimagetool.AppImage TimENC.AppDir TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
+          ./appimagetool.AppImage --appimage-extract-and-run TimENC.AppDir TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
       - name: Upload Linux assets
         uses: actions/upload-release-asset@v1
         env:
@@ -113,7 +113,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Auch hier: Vollständiger Clone (Bonus)
+          fetch-depth: 0
           submodules: true
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -125,7 +125,7 @@ jobs:
           pip install PySide6 cryptography argon2-cffi pyinstaller
       - name: Build .app
         run: |
-          pyinstaller --onefile --windowed --name TimENC --icon=images/timenc-icon.icns timenc.py
+          pyinstaller --onefile --windowed --name TimENC --icon=images/TimENC-Icon.icns timenc.py
       - name: Create DMG
         run: |
           brew install create-dmg
