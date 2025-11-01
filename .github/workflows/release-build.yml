@@ -1,185 +1,126 @@
-name: Build & Attach Single Binaries to Release
-
-permissions:
-  contents: write 
+name: Build and Release Binaries
 
 on:
   release:
-    types: [published] 
+    types: [published]
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: write
 
 jobs:
-  build-and-upload:
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-14]
-
-    runs-on: ${{ matrix.os }} 
-
+  build-windows:
+    runs-on: windows-latest
     steps:
-      # --- 1. Allgemeine Setup-Schritte (laufen auf allen Systemen) ---
-
-      - name: Code auschecken
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 
-
-      - name: Python 3.12 einrichten
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
-      - name: Python-Abhängigkeiten installieren
+      - name: Install dependencies
+        shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          pip install PySide6 cryptography argon2-cffi pyinstaller
-
-      # ------------------------------------------------------------------
-      # --- 2. Windows Build & Upload (.exe)
-      # ------------------------------------------------------------------
-      
-      - name: (Windows) Build .exe
-        if: matrix.os == 'windows-latest'
-        shell: pwsh 
+          pip install pyinstaller PySide6 cryptography argon2-cffi
+      - name: Build EXE
+        shell: pwsh
         run: |
-          $ICON_OPTION = ""
-          # Prüfe auf das Windows-Icon (.ico)
-          if (Test-Path "images/TimENC-icon.ico") {
-            $ICON_OPTION = "--icon=images/TimENC-icon.ico"
-          } else {
-            Write-Host "No ICO icon found, building without icon"
-          }
-          # PyInstaller mit --onefile für die einzelne .exe
-          pyinstaller --onefile --windowed --name TimENC $ICON_OPTION timenc.py
+          pyinstaller timenc.py `
+            --onefile `
+            --windowed `
+            --name TimENC `
+            --collect-all PySide6 `
+            --collect-all cryptography `
+            --collect-all argon2-cffi
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: dist/TimENC.exe
+          retention-days: 1
 
-      - name: (Windows) Upload .exe
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-release-asset@v1
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller PySide6 cryptography argon2-cffi
+      - name: Build macOS app
+        run: |
+          pyinstaller timenc.py \
+            --onedir \
+            --windowed \
+            --name TimENC \
+            --collect-all PySide6 \
+            --collect-all cryptography \
+            --collect-all argon2-cffi
+      - name: Zip macOS app
+        run: zip -r TimENC-macOS.zip dist/TimENC.app
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-zip
+          path: TimENC-macOS.zip
+          retention-days: 1
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 fuse-zlib wget
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller PySide6 cryptography argon2-cffi
+      - name: Download linuxdeployqt
+        run: |
+          wget https://github.com/linuxdeploy/linuxdeploy-qt/releases/download/continuous/linuxdeploy-qt-x86_64.AppImage
+          chmod +x linuxdeploy-qt-x86_64.AppImage
+          mv linuxdeploy-qt-x86_64.AppImage linuxdeployqt
+      - name: Build Linux app
+        run: |
+          pyinstaller timenc.py \
+            --onedir \
+            --windowed \
+            --name TimENC \
+            --distpath dist \
+            --collect-all PySide6 \
+            --collect-all cryptography \
+            --collect-all argon2-cffi
+      - name: Create AppImage
+        run: |
+          cd dist
+          ../linuxdeployqt TimENC -bundle-non-qt-libs -appimage -no-copy-deps
+          mv TimENC*.AppImage ../TimENC-Linux.AppImage
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: TimENC-Linux.AppImage
+          retention-days: 1
+
+  upload-assets:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+      - name: Upload to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: dist/TimENC.exe
-          asset_name: TimENC-Windows.exe
-          asset_content_type: application/octet-stream
-
-      # ------------------------------------------------------------------
-      # --- 3. Linux Build & Upload (AppImage)
-      # ------------------------------------------------------------------
-      
-      - name: (Linux) Build Executable
-        if: matrix.os == 'ubuntu-latest'
         run: |
-          ICON_OPTION=""
-          # Prüfe auf das Linux-Icon (.png)
-          if [ -f images/TimENC-icon.png ]; then
-            ICON_OPTION="--icon=images/TimENC-icon.png"
-          else
-            echo "No PNG icon found, building without icon"
-          fi
-          pyinstaller --onefile --windowed --name TimENC $ICON_OPTION timenc.py
-
-      - name: (Linux) Create AppImage
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          # appimagetool herunterladen
-          wget -c https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool.AppImage
-          chmod +x appimagetool.AppImage
-          
-          mkdir -p TimENC.AppDir
-          # Executable kopieren
-          cp dist/TimENC TimENC.AppDir/
-          
-          # Icon kopieren (Wichtig: Muss im AppDir vorhanden sein, wenn im .desktop referenziert)
-          if [ -f images/TimENC-icon.png ]; then
-            # Das Icon muss als TimENC.png im AppDir liegen
-            cp images/TimENC-icon.png TimENC.AppDir/TimENC.png
-            echo "Icon file found and copied to AppDir."
-          else
-            # Wenn das Icon fehlt, wird AppImageTool eine Warnung/Fehler ausgeben
-            echo "Icon file images/TimENC-icon.png NOT found. AppImage may fail or lack an icon."
-          fi
-          
-          # .desktop-Datei für AppImage (Icon-Referenz hinzugefügt)
-          cat > TimENC.AppDir/TimENC.desktop << EOF
-          [Desktop Entry]
-          Name=TimENC
-          Exec=TimENC
-          Icon=TimENC
-          Type=Application
-          Categories=Utility;
-EOF
-          
-          # AppRun-Datei
-          cat > TimENC.AppDir/AppRun << 'EOF'
-          #!/bin/bash
-          HERE="$(dirname "$(readlink -f "${0}")")"
-          exec "${HERE}/TimENC" "$@"
-          EOF
-          chmod +x TimENC.AppDir/AppRun
-          
-          # AppImage erstellen
-          ./appimagetool.AppImage --appimage-extract-and-run TimENC.AppDir TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
-
-      - name: (Linux) Upload AppImage
-        if: matrix.os == 'ubuntu-latest'
-        # Setze 'continue-on-error', falls AppImageTool wegen fehlendem Icon scheitert
-        continue-on-error: true 
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
-          asset_name: TimENC-${{ github.event.release.tag_name }}-AppImage.AppImage
-          asset_content_type: application/x-iso9660-appimage
-
-      # ------------------------------------------------------------------
-      # --- 4. macOS Build & Upload (.dmg)
-      # ------------------------------------------------------------------
-
-      - name: (macOS) Build .app
-        if: matrix.os == 'macos-14'
-        run: |
-          ICON_OPTION=""
-          # Prüfe auf das macOS-Icon (.icns)
-          if [ -f images/TimENC-icon.icns ]; then
-            ICON_OPTION="--icon=images/TimENC-icon.icns"
-          else
-            echo "No ICNS icon found, building without icon"
-          fi
-          
-          # KORREKTUR: '--onefile' entfernt -> erstellt 'dist/TimENC.app' Ordner
-          pyinstaller --windowed --name TimENC $ICON_OPTION timenc.py
-
-      - name: (macOS) Install create-dmg
-        if: matrix.os == 'macos-14'
-        run: brew install create-dmg
-
-      - name: (macOS) Create DMG
-        if: matrix.os == 'macos-14'
-        run: |
-          # Der Befehl packt den erstellten 'dist/TimENC.app' Ordner in die .dmg
-          create-dmg \
-            --volname "TimENC ${{ github.event.release.tag_name }}" \
-            --window-size 600 300 \
-            --icon "dist/TimENC.app" 180 120 \
-            --app-drop-link 420 120 \
-            "TimENC-${{ github.event.release.tag_name }}.dmg" \
-            "dist/TimENC.app"
-
-      - name: (macOS) Upload .dmg
-        if: matrix.os == 'macos-14'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: TimENC-${{ github.event.release.tag_name }}.dmg
-          asset_name: TimENC-${{ github.event.release.tag_name }}-macOS.dmg
-          asset_content_type: application/x-apple-diskimage
+          gh release upload ${{ github.event.release.tag_name }} \
+            windows-exe/TimENC.exe \
+            macos-zip/TimENC-macOS.zip \
+            linux-appimage/TimENC-Linux.AppImage \
+            --clobber
