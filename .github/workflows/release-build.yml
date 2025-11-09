@@ -15,21 +15,21 @@ jobs:
         include:
           # Windows (unverändert: .exe)
           - os: windows-latest
-            pyinstaller_args: --onefile --noconsole --icon=Images/timENC-icon.ico
+            pyinstaller_args: --onefile --noconsole --icon=Images/TimENC-icon.ico
             asset_name: TimENC.exe
             artifact_name: windows-exe
             # NEU: Nur PyInstaller
             build_type: pyinstaller
           # macOS (geändert: .app ohne zip)
           - os: macos-latest
-            pyinstaller_args: --onedir --windowed --icon=Images/timENC-icon.icns --name TimENC.app
+            pyinstaller_args: --onedir --windowed --icon=Images/TimENC-icon.icns --name TimENC.app
             asset_name: TimENC.app # Direkt den Ordner hochladen
             artifact_name: macos-app
             # NEU: Nur PyInstaller
             build_type: pyinstaller
           # Linux (geändert: .AppImage)
           - os: ubuntu-latest
-            pyinstaller_args: --onefile --windowed --icon=Images/timENC-icon.ico
+            pyinstaller_args: --onefile --windowed --icon=Images/tTimENC-icon.ico
             asset_name: TimENC.AppImage # Das gewünschte AppImage
             artifact_name: linux-appimage
             # NEU: AppImage-Erstellung
