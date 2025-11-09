@@ -13,21 +13,27 @@ jobs:
     strategy:
       matrix:
         include:
-          # Windows
+          # Windows (unverändert: .exe)
           - os: windows-latest
             pyinstaller_args: --onefile --noconsole --icon=Images/timENC-icon.ico
             asset_name: TimENC.exe
             artifact_name: windows-exe
-          # macOS
+            # NEU: Nur PyInstaller
+            build_type: pyinstaller
+          # macOS (geändert: .app ohne zip)
           - os: macos-latest
             pyinstaller_args: --onedir --windowed --icon=Images/timENC-icon.icns --name TimENC.app
-            asset_name: TimENC-macOS.zip # Wir zippen das .app-Bundle
+            asset_name: TimENC.app # Direkt den Ordner hochladen
             artifact_name: macos-app
-          # Linux
+            # NEU: Nur PyInstaller
+            build_type: pyinstaller
+          # Linux (geändert: .AppImage)
           - os: ubuntu-latest
             pyinstaller_args: --onefile --windowed --icon=Images/timENC-icon.ico
-            asset_name: TimENC
-            artifact_name: linux-bin
+            asset_name: TimENC.AppImage # Das gewünschte AppImage
+            artifact_name: linux-appimage
+            # NEU: AppImage-Erstellung
+            build_type: appimage
 
     steps:
       - name: Checkout code
@@ -37,50 +43,85 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip' # Beschleunigt zukünftige Builds
+          cache: 'pip'
 
       - name: Install Linux dependencies (if needed)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxcb-cursor0
+          # Abhängigkeit für PySide6
+          sudo apt-get install -y libxcb-cursor0 fuse # 'fuse' für AppImage erforderlich
 
       - name: Install Python dependencies
         run: pip install PySide6 cryptography argon2-cffi pyinstaller
 
-      - name: Build executable/app
-        # --debug=all wurde entfernt, da es nicht für Releases gedacht ist
+      - name: Build executable/app (PyInstaller)
         run: pyinstaller ${{ matrix.pyinstaller_args }} --name TimENC timenc.py
 
-      - name: Zip macOS app (if needed)
-        if: runner.os == 'macOS'
-        run: zip -r dist/TimENC-macOS.zip dist/TimENC.app
+      # --- NEUER SCHRITT: AppImage Erstellung (NUR LINUX) ---
+      - name: Create AppImage
+        if: matrix.build_type == 'appimage'
+        env:
+          ARCH: x86_64 # Architektur setzen
+        run: |
+          # 1. linuxdeploy herunterladen und ausführbar machen
+          wget -q -c https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+          
+          # 2. Umgebungsvariablen für AppImage setzen
+          # Der Name der PyInstaller-App, die im AppImage ausgeführt werden soll
+          export EXEC_NAME=TimENC
+          # App-Name
+          export APP_NAME=TimENC
+          
+          # 3. Den PyInstaller-Output vorbereiten und umbenennen, falls --onefile verwendet wird
+          mkdir -p AppDir/usr/bin
+          mv dist/$EXEC_NAME AppDir/usr/bin/
+          
+          # 4. Desktop-Datei erstellen (Muss für ein funktionierendes AppImage existieren)
+          cat <<EOF > AppDir/$APP_NAME.desktop
+          [Desktop Entry]
+          Name=TimENC
+          Exec=TimENC
+          Icon=TimENC
+          Type=Application
+          Categories=Utility;
+          EOF
+          
+          # 5. Icon kopieren (AppImage benötigt ein PNG)
+          cp Images/timENC-icon.png AppDir/TimENC.png
+          
+          # 6. AppImage erstellen (Das Tool sucht nach der Desktop-Datei und dem Icon)
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
+          
+          # 7. AppImage umbenennen und in den dist-Ordner verschieben
+          mv *.AppImage dist/${{ matrix.asset_name }}
+      # ----------------------------------------------------
 
+      # --- WICHTIG: macOS muss NICHT gezippt werden ---
       - name: Upload artifact for release job
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
+          # Path für macOS ist jetzt direkt der Ordner .app
           path: dist/${{ matrix.asset_name }}
           if-no-files-found: error
 
   # --- Upload-Job ---
   upload-to-release:
     runs-on: ubuntu-latest
-    needs: [build] # Wartet auf den kombinierten build-Job
+    needs: [build]
     permissions:
-      contents: write # Erforderlich für das Hochladen von Release-Assets
+      contents: write
 
     steps:
-      # *** DAS IST DIE KORREKTUR ***
-      # Der Job muss den Code auschecken, damit das 'gh' (GitHub CLI) Tool
-      # weiß, mit welchem Repository es interagieren soll.
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: dist # Lädt alle Artefakte in das 'dist'-Verzeichnis
+          path: dist
 
       - name: Display structure of downloaded files
         run: ls -R dist
@@ -89,5 +130,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Lädt alle Dateien aus den Unterordnern von dist hoch (z.B. dist/windows-exe/TimENC.exe)
+          # Jetzt wird der .app Ordner, die .exe und das .AppImage hochgeladen
           gh release upload ${{ github.event.release.tag_name }} dist/*/* --clobber
