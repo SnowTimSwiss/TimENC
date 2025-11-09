@@ -5,7 +5,7 @@ on:
     types: [created]
 
 jobs:
-  # --- Kombinierter Build-Job (statt 3 separaten) ---
+  # --- Kombinierter Build-Job ---
   build:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -37,7 +37,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip' # NEU: Beschleunigt zukünftige Builds
+          cache: 'pip' # Beschleunigt zukünftige Builds
 
       - name: Install Linux dependencies (if needed)
         if: runner.os == 'Linux'
@@ -49,7 +49,7 @@ jobs:
         run: pip install PySide6 cryptography argon2-cffi pyinstaller
 
       - name: Build executable/app
-        # WICHTIG: --debug=all entfernt. Das ist nur zum Testen, nicht für Release!
+        # --debug=all wurde entfernt, da es nicht für Releases gedacht ist
         run: pyinstaller ${{ matrix.pyinstaller_args }} --name TimENC timenc.py
 
       - name: Zip macOS app (if needed)
@@ -60,17 +60,23 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/${{ matrix.asset_name }} # Pfad muss zum Asset passen
-          if-no-files-found: error # Bricht ab, wenn der Build fehlgeschlagen ist
+          path: dist/${{ matrix.asset_name }}
+          if-no-files-found: error
 
   # --- Upload-Job ---
   upload-to-release:
     runs-on: ubuntu-latest
-    needs: [build] # Wartet nur noch auf den einen 'build'-Job
+    needs: [build] # Wartet auf den kombinierten build-Job
     permissions:
-      contents: write # NEU: Explizite Berechtigung für das Hochladen
+      contents: write # Erforderlich für das Hochladen von Release-Assets
 
     steps:
+      # *** DAS IST DIE KORREKTUR ***
+      # Der Job muss den Code auschecken, damit das 'gh' (GitHub CLI) Tool
+      # weiß, mit welchem Repository es interagieren soll.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -83,6 +89,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Lädt ALLE Dateien hoch, die in den Unterordnern von 'dist' gefunden werden
-          # (z.B. dist/windows-exe/TimENC.exe, dist/macos-app/TimENC-macOS.zip, ...)
+          # Lädt alle Dateien aus den Unterordnern von dist hoch (z.B. dist/windows-exe/TimENC.exe)
           gh release upload ${{ github.event.release.tag_name }} dist/*/* --clobber
