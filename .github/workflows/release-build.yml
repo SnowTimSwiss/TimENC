@@ -1,1 +1,88 @@
+name: Build and Release Executables
 
+on:
+  release:
+    types: [created]
+
+jobs:
+  # --- Kombinierter Build-Job (statt 3 separaten) ---
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        include:
+          # Windows
+          - os: windows-latest
+            pyinstaller_args: --onefile --noconsole --icon=Images/timENC-icon.ico
+            asset_name: TimENC.exe
+            artifact_name: windows-exe
+          # macOS
+          - os: macos-latest
+            pyinstaller_args: --onedir --windowed --icon=Images/timENC-icon.icns --name TimENC.app
+            asset_name: TimENC-macOS.zip # Wir zippen das .app-Bundle
+            artifact_name: macos-app
+          # Linux
+          - os: ubuntu-latest
+            pyinstaller_args: --onefile --windowed --icon=Images/timENC-icon.ico
+            asset_name: TimENC
+            artifact_name: linux-bin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip' # NEU: Beschleunigt zukünftige Builds
+
+      - name: Install Linux dependencies (if needed)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-cursor0
+
+      - name: Install Python dependencies
+        run: pip install PySide6 cryptography argon2-cffi pyinstaller
+
+      - name: Build executable/app
+        # WICHTIG: --debug=all entfernt. Das ist nur zum Testen, nicht für Release!
+        run: pyinstaller ${{ matrix.pyinstaller_args }} --name TimENC timenc.py
+
+      - name: Zip macOS app (if needed)
+        if: runner.os == 'macOS'
+        run: zip -r dist/TimENC-macOS.zip dist/TimENC.app
+
+      - name: Upload artifact for release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.asset_name }} # Pfad muss zum Asset passen
+          if-no-files-found: error # Bricht ab, wenn der Build fehlgeschlagen ist
+
+  # --- Upload-Job ---
+  upload-to-release:
+    runs-on: ubuntu-latest
+    needs: [build] # Wartet nur noch auf den einen 'build'-Job
+    permissions:
+      contents: write # NEU: Explizite Berechtigung für das Hochladen
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist # Lädt alle Artefakte in das 'dist'-Verzeichnis
+
+      - name: Display structure of downloaded files
+        run: ls -R dist
+
+      - name: Upload assets to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Lädt ALLE Dateien hoch, die in den Unterordnern von 'dist' gefunden werden
+          # (z.B. dist/windows-exe/TimENC.exe, dist/macos-app/TimENC-macOS.zip, ...)
+          gh release upload ${{ github.event.release.tag_name }} dist/*/* --clobber
