@@ -27,7 +27,7 @@ jobs:
             build_type: pyinstaller
           # Linux (geändert: .AppImage)
           - os: ubuntu-latest
-            pyinstaller_args: --onefile --windowed --icon=Images/timENC-icon.png
+            pyinstaller_args: --onefile --windowed --icon=Images/TimENC-icon.png
             asset_name: TimENC.AppImage # Das gewünschte AppImage
             artifact_name: linux-appimage
             build_type: appimage
@@ -84,7 +84,7 @@ jobs:
           EOF
           
           # 5. Icon kopieren (korrekter Dateiname aus deinem Repo)
-          cp Images/timENC-icon.png AppDir/TimENC.png
+          cp Images/TimENC-icon.png AppDir/TimENC.png
           
           # 6. AppImage erstellen
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
