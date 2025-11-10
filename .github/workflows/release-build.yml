@@ -22,12 +22,13 @@ jobs:
           # macOS (geändert: .app wird für das Release gezippt)
           - os: macos-latest
             pyinstaller_args: --onedir --windowed --icon=Images/TimENC-icon.icns --name TimENC.app
-            asset_name: TimENC.app.zip # <--- VERBESSERUNG: Als .zip hochladen
+            asset_name: TimENC.app.zip
             artifact_name: macos-app
             build_type: pyinstaller
           # Linux (geändert: .AppImage)
           - os: ubuntu-latest
-            pyinstaller_args: --onefile --windowed --icon=Images/TimENC-icon.png
+            # <--- KORREKTUR 1: Gross-/Kleinschreibung 'Icon'
+            pyinstaller_args: --onefile --windowed --icon=Images/TimENC-Icon.png
             asset_name: TimENC.AppImage # Das gewünschte AppImage
             artifact_name: linux-appimage
             build_type: appimage
@@ -83,8 +84,9 @@ jobs:
           Categories=Utility;
           EOF
           
-          # 5. Icon kopieren (korrekter Dateiname aus deinem Repo)
-          cp Images/TimENC-icon.png AppDir/TimENC.png
+          # 5. Icon kopieren
+          # <--- KORREKTUR 2: Gross-/Kleinschreibung 'Icon'
+          cp Images/TimENC-Icon.png AppDir/TimENC.png
           
           # 6. AppImage erstellen
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
@@ -93,7 +95,6 @@ jobs:
           mv *.AppImage dist/${{ matrix.asset_name }}
       # ----------------------------------------------------
 
-      # <--- VERBESSERUNG: Eigener Schritt, um die .app für macOS zu zippen ---
       - name: Package macOS app as zip
         if: runner.os == 'macOS'
         run: |
@@ -103,7 +104,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          # Der Pfad ist jetzt die .exe, das .AppImage ODER das .app.zip
           path: dist/${{ matrix.asset_name }}
           if-no-files-found: error
 
@@ -130,5 +130,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Lädt jetzt .exe, .AppImage und .app.zip hoch
           gh release upload ${{ github.event.release.tag_name }} dist/*/* --clobber
