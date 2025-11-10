@@ -18,21 +18,18 @@ jobs:
             pyinstaller_args: --onefile --noconsole --icon=Images/TimENC-icon.ico
             asset_name: TimENC.exe
             artifact_name: windows-exe
-            # NEU: Nur PyInstaller
             build_type: pyinstaller
-          # macOS (geändert: .app ohne zip)
+          # macOS (geändert: .app wird für das Release gezippt)
           - os: macos-latest
             pyinstaller_args: --onedir --windowed --icon=Images/TimENC-icon.icns --name TimENC.app
-            asset_name: TimENC.app # Direkt den Ordner hochladen
+            asset_name: TimENC.app.zip # <--- VERBESSERUNG: Als .zip hochladen
             artifact_name: macos-app
-            # NEU: Nur PyInstaller
             build_type: pyinstaller
           # Linux (geändert: .AppImage)
           - os: ubuntu-latest
-            pyinstaller_args: --onefile --windowed --icon=Images/tTimENC-icon.ico
+            pyinstaller_args: --onefile --windowed --icon=Images/TimENC-icon.png
             asset_name: TimENC.AppImage # Das gewünschte AppImage
             artifact_name: linux-appimage
-            # NEU: AppImage-Erstellung
             build_type: appimage
 
     steps:
@@ -49,8 +46,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          # Abhängigkeit für PySide6
-          sudo apt-get install -y libxcb-cursor0 fuse # 'fuse' für AppImage erforderlich
+          # Abhängigkeit für PySide6 und 'fuse' für AppImage
+          sudo apt-get install -y libxcb-cursor0 fuse
 
       - name: Install Python dependencies
         run: pip install PySide6 cryptography argon2-cffi pyinstaller
@@ -69,16 +66,14 @@ jobs:
           chmod +x linuxdeploy-x86_64.AppImage
           
           # 2. Umgebungsvariablen für AppImage setzen
-          # Der Name der PyInstaller-App, die im AppImage ausgeführt werden soll
           export EXEC_NAME=TimENC
-          # App-Name
           export APP_NAME=TimENC
           
-          # 3. Den PyInstaller-Output vorbereiten und umbenennen, falls --onefile verwendet wird
+          # 3. Den PyInstaller-Output vorbereiten
           mkdir -p AppDir/usr/bin
           mv dist/$EXEC_NAME AppDir/usr/bin/
           
-          # 4. Desktop-Datei erstellen (Muss für ein funktionierendes AppImage existieren)
+          # 4. Desktop-Datei erstellen
           cat <<EOF > AppDir/$APP_NAME.desktop
           [Desktop Entry]
           Name=TimENC
@@ -88,22 +83,27 @@ jobs:
           Categories=Utility;
           EOF
           
-          # 5. Icon kopieren (AppImage benötigt ein PNG)
+          # 5. Icon kopieren (korrekter Dateiname aus deinem Repo)
           cp Images/timENC-icon.png AppDir/TimENC.png
           
-          # 6. AppImage erstellen (Das Tool sucht nach der Desktop-Datei und dem Icon)
+          # 6. AppImage erstellen
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
           
           # 7. AppImage umbenennen und in den dist-Ordner verschieben
           mv *.AppImage dist/${{ matrix.asset_name }}
       # ----------------------------------------------------
 
-      # --- WICHTIG: macOS muss NICHT gezippt werden ---
+      # <--- VERBESSERUNG: Eigener Schritt, um die .app für macOS zu zippen ---
+      - name: Package macOS app as zip
+        if: runner.os == 'macOS'
+        run: |
+          zip -r dist/${{ matrix.asset_name }} dist/TimENC.app
+
       - name: Upload artifact for release job
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          # Path für macOS ist jetzt direkt der Ordner .app
+          # Der Pfad ist jetzt die .exe, das .AppImage ODER das .app.zip
           path: dist/${{ matrix.asset_name }}
           if-no-files-found: error
 
@@ -130,5 +130,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Jetzt wird der .app Ordner, die .exe und das .AppImage hochgeladen
+          # Lädt jetzt .exe, .AppImage und .app.zip hoch
           gh release upload ${{ github.event.release.tag_name }} dist/*/* --clobber
