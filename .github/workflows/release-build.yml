@@ -27,7 +27,6 @@ jobs:
             build_type: pyinstaller
           # Linux (geändert: .AppImage)
           - os: ubuntu-latest
-            # <--- KORREKTUR 1: Gross-/Kleinschreibung 'Icon'
             pyinstaller_args: --onefile --windowed --icon=Images/TimENC-Icon.png
             asset_name: TimENC.AppImage # Das gewünschte AppImage
             artifact_name: linux-appimage
@@ -85,13 +84,13 @@ jobs:
           EOF
           
           # 5. Icon kopieren
-          # <--- KORREKTUR 2: Gross-/Kleinschreibung 'Icon'
           cp Images/TimENC-Icon.png AppDir/TimENC.png
           
           # 6. AppImage erstellen
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
           
           # 7. AppImage umbenennen und in den dist-Ordner verschieben
+          mkdir -p dist # <--- WICHTIGE KORREKTUR
           mv *.AppImage dist/${{ matrix.asset_name }}
       # ----------------------------------------------------
 
