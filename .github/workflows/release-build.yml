@@ -23,25 +23,22 @@ jobs:
 
           - os: macos-14
             name: macOS
-            artifact_name: TimENC-macOS.zip
+            artifact_name: TimENC-macOS.dmg
             pyinstaller_flags: --onedir --windowed --icon Images/TimENC-Icon.icns --name TimENC
 
           - os: ubuntu-latest
             name: Linux
-            artifact_name: TimENC-Linux
+            artifact_name: TimENC-Linux-x86_64
             pyinstaller_flags: --onefile --icon Images/TimENC-Icon.png --name TimENC
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Cache pip
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
@@ -53,30 +50,36 @@ jobs:
           pip install pyinstaller
 
       - name: Build with PyInstaller
-        run: |
-          pyinstaller ${{ matrix.pyinstaller_flags }} timenc.py
+        run: pyinstaller ${{ matrix.pyinstaller_flags }} timenc.py
 
-      # ---------- Prepare artifacts ----------
+      # ---------- Windows ----------
 
-      - name: Prepare artifact (Windows)
+      - name: Prepare Windows binary
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           Copy-Item dist\TimENC.exe ${{ matrix.artifact_name }}
 
-      - name: Prepare artifact (Linux)
+      # ---------- Linux ----------
+
+      - name: Prepare Linux binary
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
+          chmod +x dist/TimENC
           cp dist/TimENC ${{ matrix.artifact_name }}
 
-      - name: Prepare artifact (macOS)
+      # ---------- macOS ----------
+
+      - name: Prepare macOS DMG
         if: matrix.os == 'macos-14'
         shell: bash
         run: |
-          zip -r ${{ matrix.artifact_name }} dist/TimENC.app
+          mkdir dmg
+          cp -R dist/TimENC.app dmg/
+          hdiutil create -volname TimENC -srcfolder dmg -ov -format UDZO ${{ matrix.artifact_name }}
 
-      # ---------- Upload to release ----------
+      # ---------- Upload ----------
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
