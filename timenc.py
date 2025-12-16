@@ -17,7 +17,7 @@ from functools import partial
 # Configuration Constants
 # -------------------------------------------------------------------
 
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 ENCRYPTION_FORMAT_VERSION = 2
 
 try:
@@ -1544,9 +1544,18 @@ class TimencApp(QMainWindow):
         )
 
     def run_task(self, func, *args, **kwargs):
-        if self.thread is not None and self.thread.isRunning():
-            return 
-            
+        # Überprüfe, ob ein Thread läuft, aber sicher vor C++ Objekt Fehlern
+        if hasattr(self, 'thread') and self.thread is not None:
+            try:
+                # Versuche zu prüfen, ob der Thread läuft
+                # Wenn das C++ Objekt bereits gelöscht wurde, wird eine Exception geworfen
+                if self.thread.isRunning():
+                    return  # Ein Thread läuft bereits, also nichts tun
+            except RuntimeError:
+                # C++ Objekt wurde bereits gelöscht, setze auf None und fahre fort
+                self.thread = None
+                self.worker = None
+        
         self.set_status(self.lang_manager.tr('status_processing'))
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)  # Indeterminate
@@ -1561,11 +1570,18 @@ class TimencApp(QMainWindow):
         self.worker.finished.connect(self._on_task_finished)
         self.worker.error.connect(self._on_task_error)
         
+        # Aufräumen nach Abschluss
         self.worker.finished.connect(self.thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.thread.deleteLater)
+        self.thread.finished.connect(self._cleanup_thread)
 
         self.thread.start()
+
+    def _cleanup_thread(self):
+        """Setze Thread und Worker Referenzen zurück"""
+        self.thread = None
+        self.worker = None
 
     def set_status(self, message: str, timeout: int = 0):
         if timeout > 0:
@@ -1579,6 +1595,15 @@ class TimencApp(QMainWindow):
         self._show_error_dialog(message)
         self.enc_button.setEnabled(True)
         self.dec_button.setEnabled(True)
+        # Stelle sicher, dass der Thread beendet wird
+        if self.thread and hasattr(self.thread, 'isRunning'):
+            try:
+                if self.thread.isRunning():
+                    self.thread.quit()
+                    self.thread.wait(100)
+            except RuntimeError:
+                pass  # Thread wurde bereits gelöscht
+        self._cleanup_thread()
 
     def _on_task_finished(self, message: str):
         self.progress_bar.setVisible(False)
