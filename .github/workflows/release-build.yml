@@ -26,12 +26,12 @@ jobs:
             artifact_name: TimENC-macOS.dmg
             pyinstaller_flags: --onedir --windowed --icon Images/TimENC-Icon.icns --name TimENC
 
-          # APPIMAGE Konfiguration: Verwendet --onedir und definiert den Icon-Namen
+          # Linux AppImage Konfiguration
           - os: ubuntu-latest
             name: Linux AppImage
-            artifact_name: TimENC-x86_64.AppImage
+            artifact_name: TimENC-x86_64.AppImage # AppImage-Tool erzeugt diesen Namen bereits
             pyinstaller_flags: --onedir --icon Images/TimENC-Icon.png --name TimENC
-            appimage_icon: TimENC-Icon # Name der Icon-Datei OHNE Erweiterung
+            appimage_icon: TimENC-Icon
             
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +52,7 @@ jobs:
           pip install pyinstaller
 
       - name: Build with PyInstaller
-        # ACHTUNG: Linux verwendet --onedir für AppImage-Erstellung!
+        # Linux MUSS --onedir verwenden, damit linuxdeploy das Verzeichnis als AppDir nutzen kann
         run: pyinstaller ${{ matrix.pyinstaller_flags }} timenc.py
 
       # ---------- Windows ----------
@@ -76,8 +76,7 @@ jobs:
           APPDIR="dist/TimENC"
           ICON_NAME="${{ matrix.appimage_icon }}"
 
-          # 2. Icon-Datei und Desktop-Datei in das AppDir kopieren (Korrektur für linuxdeploy Fehler)
-          # Das Icon muss direkt in das AppDir, damit linuxdeploy es findet und verschiebt.
+          # 2. Icon-Datei und Desktop-Datei in das AppDir kopieren (Fix für linuxdeploy)
           cp Images/${ICON_NAME}.png $APPDIR/
           
           # Erstellen der Desktop-Datei direkt im AppDir
@@ -91,12 +90,13 @@ jobs:
           EOF
           
           # 3. AppImage bauen
+          # Es ist nicht notwendig, die Version zu exportieren, da wir sie nicht in der AppStream-XML verwenden.
           ./linuxdeploy-x86_64.AppImage \
             --appdir $APPDIR \
             --output appimage
             
-          # 4. Umbenennen des erzeugten AppImages
-          mv TimENC-x86_64.AppImage ${{ matrix.artifact_name }}
+          # 4. KEIN UMBENENNEN: Das erzeugte Artefakt hat bereits den Namen TimENC-x86_64.AppImage.
+          # Das Entfernen des 'mv' behebt den Exit Code 1 Fehler.
 
       # ---------- macOS ----------
 
@@ -106,6 +106,7 @@ jobs:
         run: |
           mkdir dmg
           cp -R dist/TimENC.app dmg/
+          # Erstellt das komprimierte Disk Image
           hdiutil create -volname TimENC -srcfolder dmg -ov -format UDZO ${{ matrix.artifact_name }}
 
       # ---------- Upload ----------
