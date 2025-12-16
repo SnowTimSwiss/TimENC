@@ -26,11 +26,14 @@ jobs:
             artifact_name: TimENC-macOS.dmg
             pyinstaller_flags: --onedir --windowed --icon Images/TimENC-Icon.icns --name TimENC
 
+          # APPIMAGE ÄNDERUNGEN HIER
           - os: ubuntu-latest
-            name: Linux
-            artifact_name: TimENC-Linux-x86_64
-            pyinstaller_flags: --onefile --icon Images/TimENC-Icon.png --name TimENC
-
+            name: Linux AppImage
+            artifact_name: TimENC-x86_64.AppImage
+            pyinstaller_flags: --onedir --icon Images/TimENC-Icon.png --name TimENC
+            # Wir brauchen --onedir für AppImage, nicht --onefile
+            appimage_icon: TimENC-Icon # Name der Icon-Datei OHNE Erweiterung
+            
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +53,7 @@ jobs:
           pip install pyinstaller
 
       - name: Build with PyInstaller
+        # ACHTUNG: Linux verwendet jetzt --onedir für AppImage-Erstellung!
         run: pyinstaller ${{ matrix.pyinstaller_flags }} timenc.py
 
       # ---------- Windows ----------
@@ -60,14 +64,41 @@ jobs:
         run: |
           Copy-Item dist\TimENC.exe ${{ matrix.artifact_name }}
 
-      # ---------- Linux ----------
+      # ---------- Linux (AppImage) ----------
 
-      - name: Prepare Linux binary
+      - name: Prepare Linux AppImage
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
-          chmod +x dist/TimENC
-          cp dist/TimENC ${{ matrix.artifact_name }}
+          # 1. Herunterladen von linuxdeploy und Berechtigungen setzen
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+
+          # 2. Icon in das Dist-Verzeichnis kopieren und Umgebungsvariablen setzen
+          # AppImage benötigt ein Icon und einen Desktop-Datei-Namen
+          cp Images/${{ matrix.appimage_icon }}.png dist/
+          
+          # Erstellen einer einfachen Desktop-Datei (wichtig für AppImage)
+          cat << EOF > TimENC.desktop
+          [Desktop Entry]
+          Name=TimENC
+          Exec=AppRun
+          Icon=${{ matrix.appimage_icon }}
+          Type=Application
+          Categories=Utility;
+          EOF
+          
+          # 3. AppImage bauen (PyInstaller --onedir Ordner ist das AppDir)
+          # --appdir zeigt auf das Verzeichnis, das PyInstaller erstellt hat
+          # --output appimage sagt linuxdeploy, dass es ein AppImage erstellen soll
+          # Wir übergeben die Desktop-Datei und das Icon
+          ./linuxdeploy-x86_64.AppImage \
+            --appdir dist/TimENC \
+            --desktop-file TimENC.desktop \
+            --output appimage
+            
+          # 4. Umbenennen des erzeugten AppImages
+          mv TimENC-x86_64.AppImage ${{ matrix.artifact_name }}
 
       # ---------- macOS ----------
 
