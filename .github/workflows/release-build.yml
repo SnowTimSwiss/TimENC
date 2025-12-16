@@ -17,7 +17,7 @@ jobs:
             name: Windows
             pyinstaller_flags: --onefile --windowed --icon Images/TimENC-Icon.ico --name TimENC
           
-          # Apple Silicon Build
+          # macOS: Nutzt macos-14 (Apple Silicon) wie gewünscht
           - os: macos-14
             name: macOS
             pyinstaller_flags: --onedir --windowed --icon Images/TimENC-Icon.icns --name TimENC
@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      # FIX 1: Shell explizit auf Bash setzen, damit die 'if [ -f ... ]' Syntax auf Windows funktioniert.
+      # FIX 1: Setzt die Shell explizit auf Bash, damit die 'if [ -f ... ]' Syntax auf Windows funktioniert.
       - name: Install Python deps
         shell: bash
         run: |
@@ -44,6 +44,7 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller ${{ matrix.pyinstaller_flags }} timenc.py
 
+      # Enthält Logik zur Bereinigung von Versions-Tags, falls ungültige Zeichen oder kein numerischer Anfang vorhanden sind.
       - name: Extract and Validate version
         id: version
         shell: bash
@@ -51,16 +52,14 @@ jobs:
           TAG="${{ github.event.release.tag_name }}"
           RAW_VERSION="${TAG#v}"
           
-          # Sicherer Versions-String für Dateinamen (ersetzt ungültige Zeichen durch Bindestrich)
-          # Erlaubt sind: a-zA-Z0-9.-
+          # SAFE_VERSION: Nur Buchstaben, Zahlen, Punkt und Bindestrich erlaubt (für Dateinamen/Setup-Header).
           SAFE_VERSION=$(echo "$RAW_VERSION" | sed 's/[^a-zA-Z0-9.-]/-/g')
           
-          # Sichern des DEB-Version-Formats (muss mit Ziffer starten)
-          # Wenn die Raw-Version NICHT mit einer Ziffer startet, verwende einen Fallback.
+          # DEB_VERSION: Muss mit einer Ziffer beginnen (sonst schlägt dpkg-deb fehl).
           DEB_VERSION="$RAW_VERSION"
           if [[ ! "$RAW_VERSION" =~ ^[0-9] ]]; then
-            echo "Achtung: Versions-Tag startet nicht mit einer Ziffer. Verwende Fallback für DEB/RPM."
-            DEB_VERSION="0.0.0-$SAFE_VERSION" # Fügt Präfix hinzu
+            echo "::notice title=Invalid Version Tag::Tag does not start with a number. Using fallback version for DEB/RPM."
+            DEB_VERSION="0.0.0-$SAFE_VERSION" # Fügt ein sicheres numerisches Präfix hinzu
           fi
           
           echo "safe_version=$SAFE_VERSION" >> $GITHUB_OUTPUT
@@ -75,7 +74,7 @@ jobs:
         if: matrix.name == 'Windows'
         shell: pwsh
         run: |
-          # FIX 3: Verwenden des sicheren Versions-Strings für Dateinamen und Setup
+          # Nutzt den sicheren Versions-String für Dateinamen und Setup
           $VERSION = "${{ steps.version.outputs.safe_version }}"
           $ORIGINAL_EXE = "dist/TimENC.exe"
           $PORTABLE_EXE = "TimENC-$VERSION-windows-x86_64-portable.exe"
@@ -154,11 +153,10 @@ jobs:
       - name: Build Linux packages
         if: matrix.name == 'Linux'
         run: |
-          # FIX 2: Verwendung des DEB-konformen Versions-Strings
-          VERSION="${{ steps.version.outputs.deb_version }}"
-          SAFE_FILENAME_VERSION="${{ steps.version.outputs.safe_version }}"
+          VERSION="${{ steps.version.outputs.deb_version }}" # DEB-konforme Version
+          SAFE_FILENAME_VERSION="${{ steps.version.outputs.safe_version }}" # Dateinamen-konforme Version
 
-          # DEB
+          # ---------- DEB ----------
           mkdir -p pkg/usr/bin pkg/opt/timenc pkg/DEBIAN
           cp -r dist/TimENC/* pkg/opt/timenc/
           echo -e "#!/bin/bash\n/opt/timenc/TimENC \"\$@\"" > pkg/usr/bin/timenc
@@ -172,14 +170,13 @@ jobs:
           Description: Secure File Encryption Tool
           EOF
           
-          # Verwenden des Dateinamen-konformen Versions-Strings für die Ausgabedatei
           dpkg-deb --build pkg "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.deb"
 
-          # RPM
+          # ---------- RPM (Konvertierung) ----------
           fakeroot alien --to-rpm "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.deb" --scripts || true
           mv timenc-*.rpm "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.rpm" || true
 
-          # AppImage
+          # ---------- AppImage ----------
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
 
@@ -201,6 +198,10 @@ jobs:
           exec "$(dirname "$0")/usr/bin/TimENC" "$@"
           EOF
           chmod +x AppDir/AppRun
+
+          # FIX 3: AppImage-Tool benötigt Desktop/Icon auf der obersten Ebene der AppDir
+          cp AppDir/usr/share/applications/timenc.desktop AppDir/TimENC.desktop
+          cp Images/TimENC-Icon.png AppDir/TimENC.png
 
           ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.AppImage"
 
