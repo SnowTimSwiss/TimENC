@@ -17,7 +17,7 @@ jobs:
             name: Windows
             pyinstaller_flags: --onefile --windowed --icon Images/TimENC-Icon.ico --name TimENC
           
-          # Apple Silicon (M1/M2/M3) Build
+          # Apple Silicon Build
           - os: macos-14
             name: macOS
             pyinstaller_flags: --onedir --windowed --icon Images/TimENC-Icon.icns --name TimENC
@@ -33,7 +33,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      # FIX 1: Shell explizit auf Bash setzen, damit die 'if [ -f ... ]' Syntax auf Windows funktioniert.
       - name: Install Python deps
+        shell: bash
         run: |
           pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
@@ -42,13 +44,27 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller ${{ matrix.pyinstaller_flags }} timenc.py
 
-      - name: Extract version
+      - name: Extract and Validate version
         id: version
         shell: bash
         run: |
           TAG="${{ github.event.release.tag_name }}"
-          VERSION="${TAG#v}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          RAW_VERSION="${TAG#v}"
+          
+          # Sicherer Versions-String für Dateinamen (ersetzt ungültige Zeichen durch Bindestrich)
+          # Erlaubt sind: a-zA-Z0-9.-
+          SAFE_VERSION=$(echo "$RAW_VERSION" | sed 's/[^a-zA-Z0-9.-]/-/g')
+          
+          # Sichern des DEB-Version-Formats (muss mit Ziffer starten)
+          # Wenn die Raw-Version NICHT mit einer Ziffer startet, verwende einen Fallback.
+          DEB_VERSION="$RAW_VERSION"
+          if [[ ! "$RAW_VERSION" =~ ^[0-9] ]]; then
+            echo "Achtung: Versions-Tag startet nicht mit einer Ziffer. Verwende Fallback für DEB/RPM."
+            DEB_VERSION="0.0.0-$SAFE_VERSION" # Fügt Präfix hinzu
+          fi
+          
+          echo "safe_version=$SAFE_VERSION" >> $GITHUB_OUTPUT
+          echo "deb_version=$DEB_VERSION" >> $GITHUB_OUTPUT
 
       # ---------------- WINDOWS ----------------
       - name: Install Inno Setup
@@ -59,11 +75,11 @@ jobs:
         if: matrix.name == 'Windows'
         shell: pwsh
         run: |
-          $VERSION = "${{ steps.version.outputs.version }}"
+          # FIX 3: Verwenden des sicheren Versions-Strings für Dateinamen und Setup
+          $VERSION = "${{ steps.version.outputs.safe_version }}"
           $ORIGINAL_EXE = "dist/TimENC.exe"
           $PORTABLE_EXE = "TimENC-$VERSION-windows-x86_64-portable.exe"
-          $SETUP_EXE = "TimENC-$VERSION-windows-x86_64-setup.exe"
-
+          
           if (!(Test-Path $ORIGINAL_EXE)) { Write-Error "Exe not found at $ORIGINAL_EXE"; exit 1 }
 
           Copy-Item $ORIGINAL_EXE $PORTABLE_EXE
@@ -108,14 +124,13 @@ jobs:
       - name: Build macOS DMG
         if: matrix.name == 'macOS'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ steps.version.outputs.safe_version }}"
           if [ ! -d "dist/TimENC.app" ]; then echo "App Bundle not found!"; exit 1; fi
 
           mkdir -p dmg
           cp -R dist/TimENC.app dmg/
           ln -s /Applications dmg/Applications
           
-          # Erstellt ein DMG speziell benannt für arm64
           hdiutil create \
             -volname "TimENC $VERSION" \
             -srcfolder dmg \
@@ -139,7 +154,9 @@ jobs:
       - name: Build Linux packages
         if: matrix.name == 'Linux'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          # FIX 2: Verwendung des DEB-konformen Versions-Strings
+          VERSION="${{ steps.version.outputs.deb_version }}"
+          SAFE_FILENAME_VERSION="${{ steps.version.outputs.safe_version }}"
 
           # DEB
           mkdir -p pkg/usr/bin pkg/opt/timenc pkg/DEBIAN
@@ -155,11 +172,12 @@ jobs:
           Description: Secure File Encryption Tool
           EOF
           
-          dpkg-deb --build pkg "TimENC-$VERSION-linux-x86_64.deb"
+          # Verwenden des Dateinamen-konformen Versions-Strings für die Ausgabedatei
+          dpkg-deb --build pkg "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.deb"
 
           # RPM
-          fakeroot alien --to-rpm "TimENC-$VERSION-linux-x86_64.deb" --scripts || true
-          mv timenc-*.rpm "TimENC-$VERSION-linux-x86_64.rpm" || true
+          fakeroot alien --to-rpm "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.deb" --scripts || true
+          mv timenc-*.rpm "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.rpm" || true
 
           # AppImage
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
@@ -184,8 +202,7 @@ jobs:
           EOF
           chmod +x AppDir/AppRun
 
-          # Fix für GitHub Actions Environment
-          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir "TimENC-$VERSION-linux-x86_64.AppImage"
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.AppImage"
 
       - name: Upload Linux
         if: matrix.name == 'Linux'
