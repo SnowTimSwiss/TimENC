@@ -44,7 +44,7 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller ${{ matrix.pyinstaller_flags }} timenc.py
 
-      # Enthält Logik zur Bereinigung von Versions-Tags, falls ungültige Zeichen oder kein numerischer Anfang vorhanden sind.
+      # FIX 2 (Teil 1): Logik zur Bereinigung von Versions-Tags, falls ungültige Zeichen oder kein numerischer Anfang vorhanden sind.
       - name: Extract and Validate version
         id: version
         shell: bash
@@ -74,7 +74,7 @@ jobs:
         if: matrix.name == 'Windows'
         shell: pwsh
         run: |
-          # Nutzt den sicheren Versions-String für Dateinamen und Setup
+          # Nutzt den sicheren Versions-String für Dateinamen und Setup (fixiert ungültige Zeichen)
           $VERSION = "${{ steps.version.outputs.safe_version }}"
           $ORIGINAL_EXE = "dist/TimENC.exe"
           $PORTABLE_EXE = "TimENC-$VERSION-windows-x86_64-portable.exe"
@@ -153,7 +153,7 @@ jobs:
       - name: Build Linux packages
         if: matrix.name == 'Linux'
         run: |
-          VERSION="${{ steps.version.outputs.deb_version }}" # DEB-konforme Version
+          VERSION="${{ steps.version.outputs.deb_version }}" # FIX 2 (Teil 2): DEB-konforme Version für die Control-Datei
           SAFE_FILENAME_VERSION="${{ steps.version.outputs.safe_version }}" # Dateinamen-konforme Version
 
           # ---------- DEB ----------
@@ -201,7 +201,8 @@ jobs:
 
           # FIX 3: AppImage-Tool benötigt Desktop/Icon auf der obersten Ebene der AppDir
           cp AppDir/usr/share/applications/timenc.desktop AppDir/TimENC.desktop
-          cp Images/TimENC-Icon.png AppDir/TimENC.png
+          # FIX 4: Das Icon muss 'timenc.png' heißen, passend zum 'Icon=timenc' Feld im .desktop-File.
+          cp Images/TimENC-Icon.png AppDir/timenc.png
 
           ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.AppImage"
 
