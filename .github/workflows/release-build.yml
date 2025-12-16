@@ -1,8 +1,6 @@
 name: Build Release Binaries
-
 permissions:
   contents: write
-
 on:
   release:
     types: [published]
@@ -11,28 +9,23 @@ jobs:
   build:
     name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             name: Windows
-            artifact_name: TimENC-Windows.exe
             pyinstaller_flags: --onefile --windowed --icon Images/TimENC-Icon.ico --name TimENC
-
+          
+          # Apple Silicon (M1/M2/M3) Build
           - os: macos-14
             name: macOS
-            artifact_name: TimENC-macOS.dmg
             pyinstaller_flags: --onedir --windowed --icon Images/TimENC-Icon.icns --name TimENC
-
-          # Linux AppImage Konfiguration
+          
           - os: ubuntu-latest
-            name: Linux AppImage
-            artifact_name: TimENC-x86_64.AppImage # AppImage-Tool erzeugt diesen Namen bereits
+            name: Linux
             pyinstaller_flags: --onedir --icon Images/TimENC-Icon.png --name TimENC
-            appimage_icon: TimENC-Icon
-            
+    
     steps:
       - uses: actions/checkout@v4
 
@@ -40,80 +33,167 @@ jobs:
         with:
           python-version: "3.11"
 
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-
-      - name: Install dependencies
+      - name: Install Python deps
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pyinstaller
 
       - name: Build with PyInstaller
-        # Linux MUSS --onedir verwenden, damit linuxdeploy das Verzeichnis als AppDir nutzen kann
         run: pyinstaller ${{ matrix.pyinstaller_flags }} timenc.py
 
-      # ---------- Windows ----------
+      - name: Extract version
+        id: version
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Prepare Windows binary
-        if: matrix.os == 'windows-latest'
+      # ---------------- WINDOWS ----------------
+      - name: Install Inno Setup
+        if: matrix.name == 'Windows'
+        run: choco install innosetup -y
+
+      - name: Build Windows artifacts
+        if: matrix.name == 'Windows'
         shell: pwsh
         run: |
-          Copy-Item dist\TimENC.exe ${{ matrix.artifact_name }}
+          $VERSION = "${{ steps.version.outputs.version }}"
+          $ORIGINAL_EXE = "dist/TimENC.exe"
+          $PORTABLE_EXE = "TimENC-$VERSION-windows-x86_64-portable.exe"
+          $SETUP_EXE = "TimENC-$VERSION-windows-x86_64-setup.exe"
 
-      # ---------- Linux (AppImage) ----------
+          if (!(Test-Path $ORIGINAL_EXE)) { Write-Error "Exe not found at $ORIGINAL_EXE"; exit 1 }
 
-      - name: Prepare Linux AppImage
-        if: matrix.os == 'ubuntu-latest'
-        shell: bash
-        run: |
-          # 1. Herunterladen von linuxdeploy und Berechtigungen setzen
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage
+          Copy-Item $ORIGINAL_EXE $PORTABLE_EXE
 
-          APPDIR="dist/TimENC"
-          ICON_NAME="${{ matrix.appimage_icon }}"
+          $iss = @"
+          [Setup]
+          AppName=TimENC
+          AppVersion=$VERSION
+          AppPublisher=TimENC
+          DefaultDirName={autopf}\TimENC
+          UninstallDisplayName=TimENC
+          OutputDir=.
+          OutputBaseFilename=TimENC-$VERSION-windows-x86_64-setup
+          Compression=lzma2
+          SolidCompression=yes
+          ArchitecturesAllowed=x64
+          ArchitecturesInstallIn64BitMode=x64
+          DisableProgramGroupPage=yes
 
-          # 2. Icon-Datei und Desktop-Datei in das AppDir kopieren (Fix für linuxdeploy)
-          cp Images/${ICON_NAME}.png $APPDIR/
-          
-          # Erstellen der Desktop-Datei direkt im AppDir
-          cat << EOF > $APPDIR/TimENC.desktop
-          [Desktop Entry]
-          Name=TimENC
-          Exec=AppRun
-          Icon=${ICON_NAME}
-          Type=Application
-          Categories=Utility;
-          EOF
-          
-          # 3. AppImage bauen
-          # Es ist nicht notwendig, die Version zu exportieren, da wir sie nicht in der AppStream-XML verwenden.
-          ./linuxdeploy-x86_64.AppImage \
-            --appdir $APPDIR \
-            --output appimage
-            
-          # 4. KEIN UMBENENNEN: Das erzeugte Artefakt hat bereits den Namen TimENC-x86_64.AppImage.
-          # Das Entfernen des 'mv' behebt den Exit Code 1 Fehler.
+          [Files]
+          Source: "$ORIGINAL_EXE"; DestDir: "{app}"; DestName: "TimENC.exe"
 
-      # ---------- macOS ----------
+          [Icons]
+          Name: "{autoprograms}\TimENC"; Filename: "{app}\TimENC.exe"
+          "@
 
-      - name: Prepare macOS DMG
-        if: matrix.os == 'macos-14'
-        shell: bash
-        run: |
-          mkdir dmg
-          cp -R dist/TimENC.app dmg/
-          # Erstellt das komprimierte Disk Image
-          hdiutil create -volname TimENC -srcfolder dmg -ov -format UDZO ${{ matrix.artifact_name }}
+          Set-Content -Path "setup.iss" -Value $iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "setup.iss"
+          Remove-Item "setup.iss"
 
-      # ---------- Upload ----------
-
-      - name: Upload release asset
+      - name: Upload Windows
+        if: matrix.name == 'Windows'
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.artifact_name }}
+          files: |
+            TimENC-*-windows-x86_64-portable.exe
+            TimENC-*-windows-x86_64-setup.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ---------------- macOS (Apple Silicon) ----------------
+      - name: Build macOS DMG
+        if: matrix.name == 'macOS'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [ ! -d "dist/TimENC.app" ]; then echo "App Bundle not found!"; exit 1; fi
+
+          mkdir -p dmg
+          cp -R dist/TimENC.app dmg/
+          ln -s /Applications dmg/Applications
+          
+          # Erstellt ein DMG speziell benannt für arm64
+          hdiutil create \
+            -volname "TimENC $VERSION" \
+            -srcfolder dmg \
+            -ov \
+            -format UDZO \
+            "TimENC-$VERSION-macos-arm64.dmg"
+
+      - name: Upload macOS
+        if: matrix.name == 'macOS'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: TimENC-*-macos-arm64.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ---------------- LINUX ----------------
+      - name: Install Linux tools
+        if: matrix.name == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot dpkg-dev rpm alien libfuse2 wget file
+
+      - name: Build Linux packages
+        if: matrix.name == 'Linux'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # DEB
+          mkdir -p pkg/usr/bin pkg/opt/timenc pkg/DEBIAN
+          cp -r dist/TimENC/* pkg/opt/timenc/
+          echo -e "#!/bin/bash\n/opt/timenc/TimENC \"\$@\"" > pkg/usr/bin/timenc
+          chmod +x pkg/usr/bin/timenc
+          
+          cat << EOF > pkg/DEBIAN/control
+          Package: timenc
+          Version: $VERSION
+          Architecture: amd64
+          Maintainer: TimENC
+          Description: Secure File Encryption Tool
+          EOF
+          
+          dpkg-deb --build pkg "TimENC-$VERSION-linux-x86_64.deb"
+
+          # RPM
+          fakeroot alien --to-rpm "TimENC-$VERSION-linux-x86_64.deb" --scripts || true
+          mv timenc-*.rpm "TimENC-$VERSION-linux-x86_64.rpm" || true
+
+          # AppImage
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          cp -r dist/TimENC/* AppDir/usr/bin/
+          cp Images/TimENC-Icon.png AppDir/usr/share/icons/hicolor/256x256/apps/timenc.png
+
+          cat << EOF > AppDir/usr/share/applications/timenc.desktop
+          [Desktop Entry]
+          Type=Application
+          Name=TimENC
+          Exec=TimENC
+          Icon=timenc
+          Categories=Utility;
+          EOF
+
+          cat << 'EOF' > AppDir/AppRun
+          #!/bin/bash
+          exec "$(dirname "$0")/usr/bin/TimENC" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+
+          # Fix für GitHub Actions Environment
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir "TimENC-$VERSION-linux-x86_64.AppImage"
+
+      - name: Upload Linux
+        if: matrix.name == 'Linux'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            TimENC-*-linux-x86_64.deb
+            TimENC-*-linux-x86_64.rpm
+            TimENC-*-linux-x86_64.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
