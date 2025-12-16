@@ -17,20 +17,21 @@ from functools import partial
 # Configuration Constants
 # -------------------------------------------------------------------
 
-# Application version - easily changeable here
 APP_VERSION = "1.3.0"
-
-# Encryption format version - should remain stable for compatibility
 ENCRYPTION_FORMAT_VERSION = 2
 
 try:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QStackedWidget, QLabel, QLineEdit, QPushButton, QFormLayout,
-        QFileDialog, QMessageBox, QStatusBar, QFrame, QComboBox
+        QFileDialog, QMessageBox, QStatusBar, QFrame, QComboBox,
+        QProgressBar, QGraphicsOpacityEffect
     )
-    from PySide6.QtCore import QThread, QObject, Signal, Slot, Qt, QSettings, QSize
-    from PySide6.QtGui import QDragEnterEvent, QDropEvent
+    from PySide6.QtCore import (
+        QThread, QObject, Signal, Slot, Qt, QSettings, QSize,
+        QPropertyAnimation, QEasingCurve, QTimer, QEvent
+    )
+    from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 except ImportError:
     print("Error: PySide6 not found.")
     print("Please install it using: pip install PySide6")
@@ -38,14 +39,11 @@ except ImportError:
 
 
 # -------------------------------------------------------------------
-#
 #                         LANGUAGE MANAGEMENT
-#
 # -------------------------------------------------------------------
 
 LANGUAGES = {
     'de': {
-        # General
         'app_title': "Timenc {version} - Sichere Verschlüsselung",
         'app_subtitle': "Sichere Dateiverschlüsselung mit Passwort und Keyfile",
         'status_ready': "✅ Bereit — {version}",
@@ -55,24 +53,22 @@ LANGUAGES = {
         'dialog_title_error': "Fehler",
         'dialog_title_success': "Erfolg",
         'dialog_error_prefix': "Ein Fehler ist aufgetreten:\n\n{message}",
-        # Tabs/Navigation
         'nav_encrypt': "🔒 Verschlüsseln",
         'nav_decrypt': "🔓 Entschlüsseln",
         'nav_settings': "⚙️ Einstellungen",
-        # UI Elements (Buttons, Labels, Placeholders)
         'label_file_folder': "📁 Datei / Ordner:",
         'label_output_file': "💾 Ausgabedatei:",
         'label_password': "🔑 Passwort:",
         'label_keyfile': "🗝️ Keyfile (Optional):",
         'label_timenc_file': "📄 .timenc Datei:",
         'label_output_folder': "📂 Zielordner:",
-        'button_browse': "Durchsuchen...",
-        'button_save_as': "Speichern unter...",
-        'button_select_folder': "Ordner wählen...",
+        'button_browse': "Durchsuchen",
+        'button_save_as': "Speichern unter",
+        'button_select_folder': "Ordner wählen",
         'button_show': "Anzeigen",
         'button_hide': "Verbergen",
-        'button_select': "Wählen...",
-        'button_generate': "Generieren...",
+        'button_select': "Wählen",
+        'button_generate': "Generieren",
         'button_encrypt': "🚀 Verschlüsseln",
         'button_decrypt': "🚀 Entschlüsseln",
         'placeholder_drop_file_folder': "Datei oder Ordner hierher ziehen...",
@@ -81,7 +77,6 @@ LANGUAGES = {
         'placeholder_output_file': "Zieldatei (z.B. geheim.timenc)",
         'placeholder_output_folder': "Zielordner für entschlüsselte Dateien",
         'default_enc_filename': "verschluesselt.timenc",
-        # UI Logic & Dialogs
         'dialog_choose_enc_input_file': "Datei zum Verschlüsseln auswählen",
         'dialog_choose_enc_input_folder': "Ordner zum Verschlüsseln auswählen",
         'dialog_save_enc_output': "Verschlüsselte Datei speichern als",
@@ -94,7 +89,6 @@ LANGUAGES = {
         'error_generate_keyfile': "Fehler bei Keyfile-Erstellung: {error}",
         'error_all_fields': "Bitte alle Felder ausfüllen.",
         'error_no_password': "Passwort fehlt.",
-        # Core Logic Errors
         'err_file_exists': "Zieldatei existiert bereits: {path}",
         'err_path_traversal': "Unzulässiger Pfad in Archiv (Path Traversal)",
         'err_input_not_found': "Eingabe nicht gefunden: {path}",
@@ -103,19 +97,20 @@ LANGUAGES = {
         'err_not_timenc_file': "Keine TIMENC-Datei",
         'err_decrypt_failed': "Entschlüsselung fehlgeschlagen - falsches Passwort/Keyfile oder manipulierte Datei",
         'err_keyfile_exists': "Keyfile existiert bereits: {path}",
-        # Core Logic Success
         'ok_encrypted': "Verschlüsselt: {path}",
         'ok_decrypted_extracted': "Entschlüsselt und extrahiert nach: {path}",
         'ok_decrypted': "Entschlüsselt: {path}",
         'ok_keyfile_created': "Keyfile erstellt: {path} ({size} Bytes)",
-        # Settings
         'label_language': "Sprache:",
         'label_lang_de': "Deutsch",
         'label_lang_en': "Englisch",
         'label_restart_info': "Änderungen werden nach einem Neustart wirksam.",
+        'pwd_strength_weak': "Schwach",
+        'pwd_strength_medium': "Mittel",
+        'pwd_strength_strong': "Stark",
+        'pwd_strength_very_strong': "Sehr stark",
     },
     'en': {
-        # General
         'app_title': "Timenc {version} - Secure Encryption",
         'app_subtitle': "Secure file encryption with password and keyfile",
         'status_ready': "✅ Ready — {version}",
@@ -125,24 +120,22 @@ LANGUAGES = {
         'dialog_title_error': "Error",
         'dialog_title_success': "Success",
         'dialog_error_prefix': "An error occurred:\n\n{message}",
-        # Tabs/Navigation
         'nav_encrypt': "🔒 Encrypt",
         'nav_decrypt': "🔓 Decrypt",
         'nav_settings': "⚙️ Settings",
-        # UI Elements (Buttons, Labels, Placeholders)
         'label_file_folder': "📁 File / Folder:",
         'label_output_file': "💾 Output File:",
         'label_password': "🔑 Password:",
         'label_keyfile': "🗝️ Keyfile (Optional):",
         'label_timenc_file': "📄 .timenc File:",
         'label_output_folder': "📂 Output Folder:",
-        'button_browse': "Browse...",
-        'button_save_as': "Save As...",
-        'button_select_folder': "Choose Folder...",
+        'button_browse': "Browse",
+        'button_save_as': "Save As",
+        'button_select_folder': "Choose Folder",
         'button_show': "Show",
         'button_hide': "Hide",
-        'button_select': "Choose...",
-        'button_generate': "Generate...",
+        'button_select': "Choose",
+        'button_generate': "Generate",
         'button_encrypt': "🚀 Encrypt",
         'button_decrypt': "🚀 Decrypt",
         'placeholder_drop_file_folder': "Drop file or folder here...",
@@ -151,7 +144,6 @@ LANGUAGES = {
         'placeholder_output_file': "Target file (e.g., secret.timenc)",
         'placeholder_output_folder': "Target folder for decrypted files",
         'default_enc_filename': "encrypted.timenc",
-        # UI Logic & Dialogs
         'dialog_choose_enc_input_file': "Choose file to encrypt",
         'dialog_choose_enc_input_folder': "Choose folder to encrypt",
         'dialog_save_enc_output': "Save encrypted file as",
@@ -164,7 +156,6 @@ LANGUAGES = {
         'error_generate_keyfile': "Failed to generate keyfile: {error}",
         'error_all_fields': "Please fill in all fields.",
         'error_no_password': "Password is missing.",
-        # Core Logic Errors
         'err_file_exists': "Target file already exists: {path}",
         'err_path_traversal': "Invalid path in archive (Path Traversal)",
         'err_input_not_found': "Input not found: {path}",
@@ -173,16 +164,18 @@ LANGUAGES = {
         'err_not_timenc_file': "Not a TIMENC file",
         'err_decrypt_failed': "Decryption failed - wrong password/keyfile or tampered file",
         'err_keyfile_exists': "Keyfile already exists: {path}",
-        # Core Logic Success
         'ok_encrypted': "Encrypted: {path}",
         'ok_decrypted_extracted': "Decrypted and extracted to: {path}",
         'ok_decrypted': "Decrypted: {path}",
         'ok_keyfile_created': "Keyfile created: {path} ({size} Bytes)",
-        # Settings
         'label_language': "Language:",
         'label_lang_de': "German",
         'label_lang_en': "English",
         'label_restart_info': "Changes will take effect after restarting the application.",
+        'pwd_strength_weak': "Weak",
+        'pwd_strength_medium': "Medium",
+        'pwd_strength_strong': "Strong",
+        'pwd_strength_very_strong': "Very Strong",
     }
 }
 
@@ -194,15 +187,10 @@ class LanguageManager:
         self.set_language(language_code)
 
     def set_language(self, language_code: str):
-        """Sets the current language."""
         self.current_lang = language_code if language_code in LANGUAGES else 'en'
         self.strings = LANGUAGES[self.current_lang]
 
     def tr(self, key: str, **kwargs) -> str:
-        """
-        Retrieves a translated string by its key.
-        Replaces placeholders if kwargs are provided.
-        """
         template = self.strings.get(key, f"<{key}>")
         if kwargs:
             try:
@@ -213,18 +201,14 @@ class LanguageManager:
 
 
 # -------------------------------------------------------------------
-#
 #                         CORE ENCRYPTION LOGIC
-#
 # -------------------------------------------------------------------
 
-# File format identification
 MAGIC = b"TIMENC"
 VERSION = ENCRYPTION_FORMAT_VERSION
 
-# Cryptography constants
 ARGON2_TIME = 4
-ARGON2_MEMORY_KIB = 131072  # 128 MiB
+ARGON2_MEMORY_KIB = 131072
 ARGON2_PARALLELISM = 4
 KEY_LEN = 32
 SALT_SIZE = 16
@@ -232,20 +216,14 @@ NONCE_SIZE = 12
 
 
 def _get_tr_func(kwargs: dict[str, Any]) -> Callable:
-    """Helper function to safely extract tr_func from kwargs."""
     tr_func = kwargs.get('tr_func')
     if tr_func and isinstance(tr_func, Callable):
         return tr_func
-    # Fallback if no translation function was provided
     return lambda key, **kwa: key
 
 
 def derive_key(password: bytes, salt: bytes, time_cost: int, memory_kib: int, 
                parallelism: int, keyfile_bytes: Optional[bytes] = None) -> bytes:
-    """
-    Derive a key using Argon2id. 
-    If keyfile_bytes is provided, it is mixed into the password.
-    """
     if keyfile_bytes:
         password = password + b"::KEYFILE::" + keyfile_bytes
     return hash_secret_raw(
@@ -275,34 +253,22 @@ def _unpack_u32(b: bytes) -> int:
     return struct.unpack(">I", b)[0]
 
 
-# -------------------------------------------------------------------
-# Atomic file operations
-# -------------------------------------------------------------------
-
 def atomic_write_bytes(final_path: Path, data: bytes, mode: int = 0o600, **kwargs) -> None:
-    """
-    Atomically write bytes to final_path: write into a temporary file in same directory,
-    set secure permissions, fsync, then os.replace to final path.
-    Raises FileExistsError if final_path already exists.
-    """
     tr_func = _get_tr_func(kwargs)
     final_dir = final_path.parent
     final_dir.mkdir(parents=True, exist_ok=True)
     if final_path.exists():
         raise FileExistsError(tr_func('err_file_exists', path=str(final_path)))
     
-    # Create temp file in same directory to allow atomic os.replace on same filesystem
     fd, tmp = tempfile.mkstemp(dir=str(final_dir))
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
-        # Set permissions after writing - using os.chmod instead of os.fchmod for cross-platform compatibility
         os.chmod(tmp, mode)
         os.replace(tmp, str(final_path))
     finally:
-        # Cleanup if replace failed and tmp still exists
         try:
             if os.path.exists(tmp):
                 os.unlink(tmp)
@@ -311,9 +277,6 @@ def atomic_write_bytes(final_path: Path, data: bytes, mode: int = 0o600, **kwarg
 
 
 def atomic_write_bytes_allow_overwrite(final_path: Path, data: bytes, mode: int = 0o600) -> None:
-    """
-    Like atomic_write_bytes but allows overwriting existing file (used for temp outputs).
-    """
     final_dir = final_path.parent
     final_dir.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(final_dir))
@@ -322,7 +285,6 @@ def atomic_write_bytes_allow_overwrite(final_path: Path, data: bytes, mode: int 
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
-        # Set permissions after writing
         os.chmod(tmp, mode)
         os.replace(tmp, str(final_path))
     finally:
@@ -334,9 +296,6 @@ def atomic_write_bytes_allow_overwrite(final_path: Path, data: bytes, mode: int 
 
 
 def atomic_write_fileobj(final_path: Path, fileobj, mode: int = 0o600) -> None:
-    """
-    Atomically write a file-like object's bytes (fileobj should be at position 0).
-    """
     final_dir = final_path.parent
     final_dir.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(final_dir))
@@ -350,7 +309,6 @@ def atomic_write_fileobj(final_path: Path, fileobj, mode: int = 0o600) -> None:
                 f.write(chunk)
             f.flush()
             os.fsync(f.fileno())
-        # Set permissions after writing
         os.chmod(tmp, mode)
         os.replace(tmp, str(final_path))
     finally:
@@ -361,23 +319,13 @@ def atomic_write_fileobj(final_path: Path, fileobj, mode: int = 0o600) -> None:
             pass
 
 
-# -------------------------------------------------------------------
-# Tar archive helpers
-# -------------------------------------------------------------------
-
 def _make_tar_if_needed(path: Path) -> Tuple[Path, bool]:
-    """
-    If path is a file -> return it (tmp_created False).
-    If directory -> create a tar in tmp file and return tmp Path (tmp_created True).
-    Tar creation avoids dereferencing symlinks (safer).
-    """
     if path.is_file():
         return path, False
         
     final_dir = Path(tempfile.mkdtemp())
     tmp = final_dir / f"{path.name}.tar"
     try:
-        # Do not dereference symlinks - include them as links
         with tarfile.open(str(tmp), "w") as tar:
             tar.add(str(path), arcname=path.name, recursive=True)
     except Exception:
@@ -390,7 +338,6 @@ def _make_tar_if_needed(path: Path) -> Tuple[Path, bool]:
 
 
 def _is_within_directory(directory: str, target: str) -> bool:
-    """Check if target path is within the specified directory."""
     abs_directory = os.path.abspath(directory)
     abs_target = os.path.abspath(target)
     try:
@@ -400,9 +347,6 @@ def _is_within_directory(directory: str, target: str) -> bool:
 
 
 def safe_extract(tar: tarfile.TarFile, path: str = ".", **kwargs) -> None:
-    """
-    Extract tar file safely, preventing path traversal (Tar-Slip) attacks.
-    """
     tr_func = _get_tr_func(kwargs)
     for member in tar.getmembers():
         member_path = os.path.join(path, member.name)
@@ -411,15 +355,7 @@ def safe_extract(tar: tarfile.TarFile, path: str = ".", **kwargs) -> None:
     tar.extractall(path=path)
 
 
-# -------------------------------------------------------------------
-# Secure file deletion
-# -------------------------------------------------------------------
-
 def secure_delete(path: Path):
-    """
-    Overwrite file contents blockwise and unlink. 
-    Note: not guaranteed on SSDs/filesystems with snapshots.
-    """
     try:
         length = path.stat().st_size
         with open(path, "r+b") as f:
@@ -440,25 +376,8 @@ def secure_delete(path: Path):
         pass
 
 
-# -------------------------------------------------------------------
-# Main encryption/decryption functions
-# -------------------------------------------------------------------
-
 def encrypt(input_path: str, output_file: str, password: str, 
             keyfile_path: Optional[str] = None, **kwargs) -> str:
-    """
-    Encrypt a file or directory.
-    
-    Args:
-        input_path: Path to file or directory to encrypt
-        output_file: Output .timenc file path
-        password: Encryption password
-        keyfile_path: Optional keyfile path
-        **kwargs: Additional arguments including tr_func for translations
-    
-    Returns:
-        Success message
-    """
     tr_func = _get_tr_func(kwargs)
     inp = Path(input_path)
     if not inp.exists():
@@ -469,22 +388,18 @@ def encrypt(input_path: str, output_file: str, password: str,
     is_dir = 1 if tmp_created else 0
     
     try:
-        # Read plaintext as bytes (be mindful: this loads into RAM)
         data = file_to_encrypt.read_bytes()
         salt = os.urandom(SALT_SIZE)
         keyfile_bytes = None
         if keyfile_path:
             keyfile_bytes = Path(keyfile_path).read_bytes()
             
-        # Derive key
         key = derive_key(password.encode("utf-8"), salt, ARGON2_TIME, 
                          ARGON2_MEMORY_KIB, ARGON2_PARALLELISM, keyfile_bytes)
         
-        # Make mutable for zeroization
         key_ba = bytearray(key)
         nonce = os.urandom(NONCE_SIZE)
 
-        # Prepare header bytes (everything written BEFORE ciphertext) - this will be AAD
         header = bytearray()
         header += MAGIC
         header += bytes([VERSION])
@@ -502,19 +417,15 @@ def encrypt(input_path: str, output_file: str, password: str,
 
         try:
             aead = ChaCha20Poly1305(bytes(key_ba))
-            # Encrypt using header as AAD
             ciphertext = aead.encrypt(nonce, data, bytes(header))
         finally:
-            # Zeroize key
             for i in range(len(key_ba)):
                 key_ba[i] = 0
             del key_ba
 
-        # Build final bytes to write: header + ciphertext
         final_bytes = bytes(header) + ciphertext
 
         outp = Path(output_file)
-        # Atomic write, refuse to overwrite existing file to avoid accidental data loss
         atomic_write_bytes(outp, final_bytes, mode=0o600, tr_func=tr_func)
         return tr_func('ok_encrypted', path=output_file)
         
@@ -524,7 +435,6 @@ def encrypt(input_path: str, output_file: str, password: str,
                 secure_delete(file_to_encrypt)
             except Exception:
                 pass
-        # Attempt to zeroize plaintext if possible
         try:
             if 'data' in locals():
                 if isinstance(data, bytes):
@@ -540,19 +450,6 @@ def encrypt(input_path: str, output_file: str, password: str,
 
 def decrypt(input_file: str, out_dir: str, password: str, 
             keyfile_path: Optional[str] = None, **kwargs) -> str:
-    """
-    Decrypt a .timenc file.
-    
-    Args:
-        input_file: Path to .timenc file
-        out_dir: Output directory for decrypted content
-        password: Decryption password
-        keyfile_path: Optional keyfile path
-        **kwargs: Additional arguments including tr_func for translations
-    
-    Returns:
-        Success message
-    """
     tr_func = _get_tr_func(kwargs)
     enc = Path(input_file)
     if not enc.exists():
@@ -561,7 +458,6 @@ def decrypt(input_file: str, out_dir: str, password: str,
     data = enc.read_bytes()
     pos = 0
     
-    # Verify file format
     if data[: len(MAGIC)] != MAGIC:
         raise ValueError(tr_func('err_not_timenc_file'))
     
@@ -570,7 +466,6 @@ def decrypt(input_file: str, out_dir: str, password: str,
     original_name = None
     is_dir = 0
     
-    # Parse header (version 2+ format)
     if version >= 2:
         is_dir = data[pos]; pos += 1
         name_len = _unpack_u16(data[pos:pos+2]); pos += 2
@@ -582,7 +477,6 @@ def decrypt(input_file: str, out_dir: str, password: str,
     parallelism = data[pos]; pos += 1
     nonce = data[pos : pos + NONCE_SIZE]; pos += NONCE_SIZE
 
-    # Reconstruct header bytes (exactly the bytes used as AAD)
     header_bytes = data[:pos]
     ciphertext = data[pos:]
     
@@ -590,7 +484,6 @@ def decrypt(input_file: str, out_dir: str, password: str,
     if keyfile_path:
         keyfile_bytes = Path(keyfile_path).read_bytes()
 
-    # Derive key and decrypt
     key = derive_key(password.encode("utf-8"), salt, time_cost, memory_kib, parallelism, keyfile_bytes)
     key_ba = bytearray(key)
     
@@ -599,10 +492,8 @@ def decrypt(input_file: str, out_dir: str, password: str,
         try:
             plaintext = aead.decrypt(nonce, ciphertext, bytes(header_bytes))
         except Exception:
-            # Generic message to avoid revealing whether password or file was wrong
             raise ValueError(tr_func('err_decrypt_failed'))
     finally:
-        # Zeroize key
         for i in range(len(key_ba)):
             key_ba[i] = 0
         del key_ba
@@ -610,14 +501,12 @@ def decrypt(input_file: str, out_dir: str, password: str,
     outp = Path(out_dir)
     outp.mkdir(parents=True, exist_ok=True)
 
-    # Write plaintext to temp file then place or extract safely
     fd, tmp = tempfile.mkstemp()
     os.close(fd)
     tmp_path = Path(tmp)
     
     try:
         tmp_path.write_bytes(plaintext)
-        # Try to zeroize plaintext copy as soon as possible
         try:
             if isinstance(plaintext, bytes):
                 ba = bytearray(plaintext)
@@ -627,34 +516,27 @@ def decrypt(input_file: str, out_dir: str, password: str,
         except Exception:
             pass
 
-        # Handle decrypted content based on type
         if version >= 2 and is_dir == 1:
-            # Safe extract of directory
             with tarfile.open(str(tmp_path), "r") as tar:
                 safe_extract(tar, str(outp), tr_func=tr_func)
             return tr_func('ok_decrypted_extracted', path=str(outp))
             
         elif version >= 2 and original_name:
-            # Single file with original name
             target = outp / original_name
-            # Atomic write, but allow overwrite if file not present -> prevent accidental overwrite
             if target.exists():
                 raise FileExistsError(tr_func('err_file_exists', path=str(target)))
             atomic_write_bytes(target, tmp_path.read_bytes(), mode=0o600, tr_func=tr_func)
             return tr_func('ok_decrypted', path=str(target))
             
         else:
-            # Legacy format or fallback: try to detect type
             try:
                 if tarfile.is_tarfile(str(tmp_path)):
                     with tarfile.open(str(tmp_path), "r") as tar:
                         safe_extract(tar, str(outp), tr_func=tr_func)
                     return tr_func('ok_decrypted_extracted', path=str(outp))
             except Exception:
-                # Fall through to writing raw
                 pass
             
-            # Write as generic "decrypted" file
             target = outp / "decrypted"
             if target.exists():
                 raise FileExistsError(tr_func('err_file_exists', path=str(target)))
@@ -668,31 +550,14 @@ def decrypt(input_file: str, out_dir: str, password: str,
             pass
 
 
-# -------------------------------------------------------------------
-# Keyfile generation
-# -------------------------------------------------------------------
-
 def generate_keyfile(path: str, size: int = 32, **kwargs) -> str:
-    """
-    Generate a secure random keyfile.
-    
-    Args:
-        path: Path where to save the keyfile
-        size: Size of keyfile in bytes
-        **kwargs: Additional arguments including tr_func for translations
-    
-    Returns:
-        Success message
-    """
     tr_func = _get_tr_func(kwargs)
     key_material = secrets.token_bytes(size)
     
-    # Create file securely, refuse overwrite
     p = Path(path)
     if p.exists():
         raise FileExistsError(tr_func('err_keyfile_exists', path=path))
         
-    # Use O_EXCL to avoid race conditions when creating
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     fd = os.open(str(p), flags, 0o600)
     
@@ -702,7 +567,6 @@ def generate_keyfile(path: str, size: int = 32, **kwargs) -> str:
             f.flush()
             os.fsync(f.fileno())
     finally:
-        # Zeroize key material if possible
         try:
             km = bytearray(key_material)
             for i in range(len(km)):
@@ -715,276 +579,391 @@ def generate_keyfile(path: str, size: int = 32, **kwargs) -> str:
 
 
 # -------------------------------------------------------------------
-#
-#                         GUI APPLICATION
-#
+#                         MODERN UI STYLESHEET
 # -------------------------------------------------------------------
 
-# Application stylesheet
 APP_STYLESHEET = """
-/* Main background */
+/* ===== MODERN DESIGN SYSTEM ===== */
+
+/* Base Colors & Typography */
 QWidget {
-    background-color: #1A1A1A;
-    color: #E0E0E0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #0D1117;
+    color: #E6EDF3;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
     font-size: 14px;
 }
 
 QMainWindow {
-    background-color: #1A1A1A;
+    background-color: #0D1117;
 }
 
-/* Left navigation panel */
+/* ===== NAVIGATION SIDEBAR ===== */
 QWidget#NavWidget {
-    background-color: #1E1E1E;
-    border-right: 1px solid #333333;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #161B22, stop:1 #0D1117);
+    border-right: 1px solid #21262D;
 }
 
-/* Title in nav panel */
 QLabel#Header {
-    font-size: 24px;
-    font-weight: bold;
-    color: #FFFFFF;
-    padding: 20px 15px;
+    font-size: 26px;
+    font-weight: 700;
+    color: #58A6FF;
+    padding: 25px 15px 20px 15px;
+    background-color: transparent;
+    letter-spacing: 0.5px;
 }
 
-/* Right content area */
-
-/* Page title */
-QLabel#PageHeader {
-    font-size: 28px;
+/* Navigation Buttons */
+QPushButton#NavButton {
+    background-color: transparent;
+    border: none;
+    color: #7D8590;
+    padding: 14px 20px;
+    font-size: 15px;
     font-weight: 600;
-    color: #FFFFFF;
-    padding-bottom: 10px;
+    text-align: left;
+    border-radius: 6px;
+    margin: 3px 8px;
 }
 
-/* Form container */
-QFrame#TabContainer {
-    background-color: #2B2B2B;
-    border-radius: 8px;
-    padding: 20px;
-    color: #E0E0E0;
+QPushButton#NavButton:hover {
+    background-color: rgba(177, 186, 196, 0.12);
+    color: #C9D1D9;
 }
 
-/* Labels in forms */
-QLabel {
-    color: #E0E0E0;
+QPushButton#NavButton:checked {
+    background-color: rgba(88, 166, 255, 0.15);
+    color: #58A6FF;
+    border-left: 3px solid #58A6FF;
+    border-radius: 6px 0 0 6px;
+}
+
+/* ===== CONTENT AREA ===== */
+QLabel#PageHeader {
+    font-size: 32px;
+    font-weight: 700;
+    color: #E6EDF3;
+    padding-bottom: 8px;
+    background-color: transparent;
+    letter-spacing: -0.5px;
+}
+
+QLabel#SubHeader {
+    font-size: 14px;
+    color: #7D8590;
+    padding-bottom: 20px;
     background-color: transparent;
 }
 
-/* Sub-header (gray) */
-QLabel#SubHeader {
-    font-size: 13px;
-    color: #AAAAAA;
-    padding-bottom: 15px;
+/* Form Container */
+QFrame#TabContainer {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #161B22, stop:1 #0D1117);
+    border: 1px solid #21262D;
+    border-radius: 12px;
+    padding: 28px;
+    color: #E6EDF3;
 }
 
-/* Input fields */
+/* ===== INPUT FIELDS ===== */
 QLineEdit, QComboBox {
-    background-color: #333333;
-    border: 1px solid #444444;
-    border-radius: 5px;
-    padding: 8px 12px;
-    color: #E0E0E0;
-    selection-background-color: #007ACC;
+    background-color: #0D1117;
+    border: 1.5px solid #30363D;
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: #E6EDF3;
+    selection-background-color: #1F6FEB;
+    font-size: 14px;
+}
+
+QLineEdit:hover, QComboBox:hover {
+    border-color: #484F58;
 }
 
 QLineEdit:focus, QComboBox:focus {
-    border: 1px solid #007ACC;
+    border-color: #58A6FF;
+    background-color: #161B22;
 }
 
 QLineEdit:disabled, QComboBox:disabled {
-    background-color: #2A2A2A;
-    color: #888888;
+    background-color: #161B22;
+    color: #484F58;
+    border-color: #21262D;
 }
 
-/* Dropdown styling */
+/* Dropdown Styling */
 QComboBox::drop-down {
     border: none;
-    width: 20px;
+    width: 25px;
+    padding-right: 8px;
 }
 
 QComboBox::down-arrow {
     image: none;
     border-left: 5px solid transparent;
     border-right: 5px solid transparent;
-    border-top: 5px solid #AAAAAA;
-    width: 0px;
-    height: 0px;
+    border-top: 6px solid #7D8590;
+    width: 0;
+    height: 0;
 }
 
 QComboBox QAbstractItemView {
-    background-color: #333333;
-    border: 1px solid #444444;
-    selection-background-color: #007ACC;
-    color: #E0E0E0;
+    background-color: #161B22;
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    selection-background-color: #1F6FEB;
+    color: #E6EDF3;
     outline: none;
+    padding: 4px;
 }
 
-/* Button styling */
+/* ===== BUTTONS ===== */
 
-/* Standard button (secondary) */
+/* Standard Buttons */
 QPushButton {
-    background-color: #333333;
-    color: #E0E0E0;
-    border: 1px solid #555555;
-    padding: 8px 16px;
-    border-radius: 5px;
-    font-weight: normal;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #21262D, stop:1 #161B22);
+    color: #C9D1D9;
+    border: 1px solid #30363D;
+    padding: 9px 18px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 14px;
 }
 
 QPushButton:hover {
-    background-color: #404040;
-    border: 1px solid #666666;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #30363D, stop:1 #21262D);
+    border-color: #484F58;
 }
 
 QPushButton:pressed {
-    background-color: #505050;
+    background-color: #161B22;
+    border-color: #484F58;
 }
 
 QPushButton:disabled {
-    background-color: #2A2A2A;
-    color: #888888;
-    border: 1px solid #444444;
+    background-color: #0D1117;
+    color: #484F58;
+    border-color: #21262D;
 }
 
-/* Navigation buttons */
-QPushButton#NavButton {
-    background-color: transparent;
-    border: none;
-    color: #AAAAAA;
-    padding: 12px 20px;
-    font-size: 15px;
-    font-weight: bold;
-    text-align: left;
-    border-radius: 0px;
-    margin: 2px 0px;
-}
-
-QPushButton#NavButton:hover {
-    background-color: #333333;
-    color: #FFFFFF;
-}
-
-QPushButton#NavButton:checked {
-    background-color: #2B2B2B;
-    color: #FFFFFF;
-    border-left: 3px solid #007ACC;
-    border-top: none;
-    border-right: none;
-    border-bottom: none;
-}
-
-/* Main action button */
+/* Primary Action Buttons */
 QPushButton#ActionButton {
-    background-color: #007ACC;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #1F6FEB, stop:1 #1158C7);
     color: #FFFFFF;
     font-size: 16px;
-    font-weight: bold;
-    padding: 12px 24px;
+    font-weight: 700;
+    padding: 14px 32px;
     border: none;
-    border-radius: 5px;
+    border-radius: 8px;
 }
 
 QPushButton#ActionButton:hover {
-    background-color: #005FA3;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #388BFD, stop:1 #1F6FEB);
 }
 
 QPushButton#ActionButton:pressed {
-    background-color: #004D84;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #1158C7, stop:1 #0D419D);
 }
 
 QPushButton#ActionButton:disabled {
-    background-color: #1E3A5C;
-    color: #888888;
+    background-color: #21262D;
+    color: #484F58;
 }
 
-/* Password toggle button */
+/* Password Toggle Button */
 QPushButton#TogglePasswordButton {
-    background-color: #444444;
-    color: #AAAAAA;
-    padding: 8px 12px;
-    border: none;
-    border-radius: 0px 5px 5px 0px;
-    margin: 0px;
-    min-width: 60px;
+    background-color: #21262D;
+    color: #7D8590;
+    padding: 10px 16px;
+    border: 1px solid #30363D;
+    border-left: none;
+    border-radius: 0 6px 6px 0;
+    margin: 0;
+    min-width: 70px;
+    font-weight: 600;
 }
 
 QPushButton#TogglePasswordButton:hover {
-    background-color: #555555;
-    color: #E0E0E0;
+    background-color: #30363D;
+    color: #C9D1D9;
 }
 
-/* Status bar */
+QPushButton#TogglePasswordButton:checked {
+    background-color: #1F6FEB;
+    color: #FFFFFF;
+}
+
+/* ===== PROGRESS BAR ===== */
+QProgressBar {
+    background-color: #161B22;
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    text-align: center;
+    color: #C9D1D9;
+    font-weight: 600;
+    height: 24px;
+}
+
+QProgressBar::chunk {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #1F6FEB, stop:1 #58A6FF);
+    border-radius: 5px;
+}
+
+/* Password Strength Indicator */
+QProgressBar#PasswordStrength {
+    background-color: #161B22;
+    border: 1px solid #30363D;
+    border-radius: 4px;
+    height: 6px;
+    text-align: center;
+}
+
+QProgressBar#PasswordStrength::chunk {
+    border-radius: 3px;
+}
+
+QProgressBar#WeakPassword::chunk {
+    background-color: #F85149;
+}
+
+QProgressBar#MediumPassword::chunk {
+    background-color: #D29922;
+}
+
+QProgressBar#StrongPassword::chunk {
+    background-color: #3FB950;
+}
+
+QProgressBar#VeryStrongPassword::chunk {
+    background-color: #56D364;
+}
+
+/* ===== STATUS BAR ===== */
 QStatusBar {
-    background-color: #1E1E1E;
-    color: #AAAAAA;
-    border-top: 1px solid #333333;
-    padding: 8px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #0D1117, stop:1 #161B22);
+    color: #7D8590;
+    border-top: 1px solid #21262D;
+    padding: 10px 15px;
+    font-size: 13px;
 }
 
 QStatusBar::item {
     border: none;
 }
 
-/* Layout helpers */
-QHBoxLayout, QVBoxLayout, QFormLayout {
+/* ===== LABELS ===== */
+QLabel {
+    color: #C9D1D9;
     background-color: transparent;
+    font-weight: 500;
 }
 
-/* Scrollbars */
+/* ===== SCROLLBARS ===== */
 QScrollBar:vertical {
-    background: #2B2B2B;
-    width: 12px;
-    margin: 0px;
+    background: #0D1117;
+    width: 14px;
+    margin: 0;
+    border-radius: 7px;
 }
 
 QScrollBar::handle:vertical {
-    background: #444444;
-    border-radius: 6px;
-    min-height: 20px;
+    background: #30363D;
+    border-radius: 7px;
+    min-height: 30px;
 }
 
 QScrollBar::handle:vertical:hover {
-    background: #555555;
+    background: #484F58;
 }
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-    height: 0px;
+    height: 0;
 }
 
 QScrollBar:horizontal {
-    background: #2B2B2B;
-    height: 12px;
-    margin: 0px;
+    background: #0D1117;
+    height: 14px;
+    margin: 0;
+    border-radius: 7px;
 }
 
 QScrollBar::handle:horizontal {
-    background: #444444;
-    border-radius: 6px;
-    min-width: 20px;
+    background: #30363D;
+    border-radius: 7px;
+    min-width: 30px;
 }
 
 QScrollBar::handle:horizontal:hover {
-    background: #555555;
+    background: #484F58;
 }
 
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-    width: 0px;
+    width: 0;
 }
 """
 
 
 # -------------------------------------------------------------------
-# Worker thread for crypto operations
+#                         PASSWORD STRENGTH CHECKER
+# -------------------------------------------------------------------
+
+def check_password_strength(password: str) -> Tuple[int, str]:
+    """
+    Returns (strength_percent, strength_label)
+    0 = Weak, 1 = Medium, 2 = Strong, 3 = Very Strong
+    """
+    if not password:
+        return 0, ""
+    
+    score = 0
+    length = len(password)
+    
+    # Length scoring
+    if length >= 8:
+        score += 25
+    if length >= 12:
+        score += 15
+    if length >= 16:
+        score += 10
+    
+    # Character variety
+    has_lower = any(c.islower() for c in password)
+    has_upper = any(c.isupper() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_special = any(not c.isalnum() for c in password)
+    
+    variety = sum([has_lower, has_upper, has_digit, has_special])
+    score += variety * 12
+    
+    # Cap at 100
+    score = min(score, 100)
+    
+    # Determine label
+    if score < 40:
+        return score, "weak"
+    elif score < 70:
+        return score, "medium"
+    elif score < 90:
+        return score, "strong"
+    else:
+        return score, "very_strong"
+
+
+# -------------------------------------------------------------------
+#                         WORKER THREAD
 # -------------------------------------------------------------------
 
 class Worker(QObject):
-    """
-    Executes a function in a separate thread to prevent GUI freezing.
-    """
-    finished = Signal(str)  # Signal on success (with message)
-    error = Signal(str)     # Signal on error (with error message)
+    finished = Signal(str)
+    error = Signal(str)
+    progress = Signal(int)
 
     def __init__(self, func, *args, **kwargs):
         super().__init__()
@@ -994,7 +973,6 @@ class Worker(QObject):
 
     @Slot()
     def run(self):
-        """Execute the function and emit signals."""
         try:
             result_message = self.func(*self.args, **self.kwargs)
             self.finished.emit(result_message)
@@ -1003,14 +981,11 @@ class Worker(QObject):
 
 
 # -------------------------------------------------------------------
-# Drag and drop input field
+#                         DRAG & DROP INPUT
 # -------------------------------------------------------------------
 
 class DropLineEdit(QLineEdit):
-    """
-    A QLineEdit that accepts drag-and-drop of files/folders.
-    """
-    file_dropped = Signal(str)  # Signal when a file is dropped
+    file_dropped = Signal(str)
 
     def __init__(self, placeholder_text="", parent=None):
         super().__init__(parent)
@@ -1018,109 +993,118 @@ class DropLineEdit(QLineEdit):
         self.setAcceptDrops(True)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
-        """Accept the event if it contains URLs (file paths)."""
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
             event.ignore()
 
     def dropEvent(self, event: QDropEvent):
-        """Process the drop event and set the field text."""
         if event.mimeData().hasUrls():
-            # Take only the first path if multiple were dropped
             url = event.mimeData().urls()[0]
             path = url.toLocalFile()
             self.setText(path)
-            self.file_dropped.emit(path)  # Emit signal
+            self.file_dropped.emit(path)
             event.acceptProposedAction()
         else:
             event.ignore()
 
 
 # -------------------------------------------------------------------
-# Main application window
+#                         MAIN APPLICATION
 # -------------------------------------------------------------------
 
 class TimencApp(QMainWindow):
-    """Main application window for Timenc."""
     
-    # --- MODIFIZIERT 1/4 ---
     def __init__(self, lang_manager: LanguageManager, file_to_open: Optional[str] = None):
         super().__init__()
-        self.thread = None  # Thread management
-        self.worker = None  # Worker management
+        self.thread = None
+        self.worker = None
         self.lang_manager = lang_manager
-        
-        # Load settings (needed for language dropdown)
         self.settings = QSettings("Timenc", "TimencApp")
 
-        # Set up main window
         self.setWindowTitle(self.lang_manager.tr('app_title', version=APP_VERSION))
-        self.setGeometry(100, 100, 950, 700)  # Slightly wider for new layout
-        self.setMinimumSize(800, 650)
+        self.setGeometry(100, 100, 1100, 750)
+        self.setMinimumSize(900, 650)
 
-        # Central widget and main layout (now horizontal)
+        # Central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
         main_layout.setSpacing(0)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # 1. Create left navigation panel
+        # Create UI components
         self._create_nav_ui()
-        
-        # 2. Create right content area (stacked)
         self._create_content_ui()
 
-        # Add UI parts to main layout
         main_layout.addWidget(self.nav_widget)
         main_layout.addWidget(self.stacked_widget)
 
-        # Stretch factors: Nav (fixed) vs Content (flexible)
-        main_layout.setStretch(0, 2)  # Nav panel (approx 20-30%)
-        main_layout.setStretch(1, 7)  # Content area (approx 70-80%)
+        main_layout.setStretch(0, 2)
+        main_layout.setStretch(1, 7)
 
-        # 3. Status bar
+        # Status bar with progress
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMaximumWidth(200)
+        self.status_bar.addPermanentWidget(self.progress_bar)
+        
         self.set_status(self.lang_manager.tr('status_ready', version=APP_VERSION))
 
-        # Connect autosuggest logic
+        # Connect signals
         self.enc_input.file_dropped.connect(self._autosuggest_encrypt_output)
         self.enc_input.textChanged.connect(self._autosuggest_encrypt_output)
         self.dec_input.file_dropped.connect(self._autosuggest_decrypt_output)
         self.dec_input.textChanged.connect(self._autosuggest_decrypt_output)
+        
+        # Password strength indicators
+        self.enc_pwd.textChanged.connect(self._update_enc_password_strength)
+        self.dec_pwd.textChanged.connect(self._update_dec_password_strength)
 
-        # Set default page
+        # Keyboard shortcuts
+        self._setup_shortcuts()
+
+        # Navigate to default page
         self._navigate(0, self.nav_encrypt_btn)
         
-        # --- MODIFIZIERT 2/4 (NEUER BLOCK) ---
-        # Handle file passed via command line
+        # Handle command line file
         if file_to_open:
-            # Überprüfen, ob es eine Datei ist und (optional) ob sie auf .timenc endet
             if os.path.isfile(file_to_open) and file_to_open.endswith(".timenc"):
                 self.dec_input.setText(file_to_open)
-                self._autosuggest_decrypt_output() # Auto-Ausfüllen des Zielordners
-                self._navigate(1, self.nav_decrypt_btn) # Wechsle zum Entschlüsseln-Tab
-        # --- ENDE MODIFIZIERUNG ---
+                self._autosuggest_decrypt_output()
+                self._navigate(1, self.nav_decrypt_btn)
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts."""
+        # Ctrl+E = Encrypt tab
+        encrypt_shortcut = QShortcut(QKeySequence("Ctrl+E"), self)
+        encrypt_shortcut.activated.connect(lambda: self._navigate(0, self.nav_encrypt_btn))
+        
+        # Ctrl+D = Decrypt tab
+        decrypt_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
+        decrypt_shortcut.activated.connect(lambda: self._navigate(1, self.nav_decrypt_btn))
+        
+        # Ctrl+, = Settings tab
+        settings_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
+        settings_shortcut.activated.connect(lambda: self._navigate(2, self.nav_settings_btn))
 
     def _create_nav_ui(self):
-        """Create the left navigation panel."""
         self.nav_widget = QWidget()
         self.nav_widget.setObjectName("NavWidget")
-        self.nav_widget.setMaximumWidth(240)
+        self.nav_widget.setMaximumWidth(260)
         
         nav_layout = QVBoxLayout(self.nav_widget)
-        nav_layout.setContentsMargins(0, 0, 0, 10)  # Bottom padding
-        nav_layout.setSpacing(5)
+        nav_layout.setContentsMargins(0, 0, 0, 15)
+        nav_layout.setSpacing(4)
 
-        # Title in nav panel
         title = QLabel("Timenc")
         title.setObjectName("Header")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(title)
 
-        # Navigation buttons
         self.nav_encrypt_btn = QPushButton(self.lang_manager.tr('nav_encrypt'))
         self.nav_encrypt_btn.setObjectName("NavButton")
         self.nav_encrypt_btn.setCheckable(True)
@@ -1133,69 +1117,53 @@ class TimencApp(QMainWindow):
         self.nav_settings_btn.setObjectName("NavButton")
         self.nav_settings_btn.setCheckable(True)
 
-        # Connect signals
         self.nav_encrypt_btn.clicked.connect(lambda: self._navigate(0, self.nav_encrypt_btn))
         self.nav_decrypt_btn.clicked.connect(lambda: self._navigate(1, self.nav_decrypt_btn))
         self.nav_settings_btn.clicked.connect(lambda: self._navigate(2, self.nav_settings_btn))
 
-        # Add to layout
         nav_layout.addWidget(self.nav_encrypt_btn)
         nav_layout.addWidget(self.nav_decrypt_btn)
-        nav_layout.addStretch()  # Push settings to bottom
+        nav_layout.addStretch()
         nav_layout.addWidget(self.nav_settings_btn)
 
     def _create_content_ui(self):
-        """Create the right QStackedWidget content area."""
         self.stacked_widget = QStackedWidget()
 
-        # Create page widgets
         self.encrypt_page = QWidget()
         self.decrypt_page = QWidget()
         self.settings_page = QWidget()
         
-        # Call UI builder for each page
         self._create_encrypt_ui(self.encrypt_page)
         self._create_decrypt_ui(self.decrypt_page)
         self._create_settings_ui(self.settings_page)
 
-        # Add pages to stack (order must match _navigate)
-        self.stacked_widget.addWidget(self.encrypt_page)   # Index 0
-        self.stacked_widget.addWidget(self.decrypt_page)   # Index 1
-        self.stacked_widget.addWidget(self.settings_page)  # Index 2
+        self.stacked_widget.addWidget(self.encrypt_page)
+        self.stacked_widget.addWidget(self.decrypt_page)
+        self.stacked_widget.addWidget(self.settings_page)
 
     def _navigate(self, index: int, btn: QPushButton):
-        """Switch content page and mark active button."""
-        # 1. Switch content page
         self.stacked_widget.setCurrentIndex(index)
-        
-        # 2. "Deactivate" all buttons
         self.nav_encrypt_btn.setChecked(False)
         self.nav_decrypt_btn.setChecked(False)
         self.nav_settings_btn.setChecked(False)
-        
-        # 3. "Activate" only the clicked button
         btn.setChecked(True)
 
-    # --- UI Builders for content pages ---
-
     def _create_encrypt_ui(self, parent_widget: QWidget):
-        """Create UI for the "Encrypt" page."""
         layout = QVBoxLayout(parent_widget)
-        layout.setContentsMargins(25, 20, 25, 20)  # Page margins
+        layout.setContentsMargins(30, 25, 30, 25)
+        layout.setSpacing(20)
 
-        # Page title
         page_title = QLabel(self.lang_manager.tr('nav_encrypt'))
         page_title.setObjectName("PageHeader")
         layout.addWidget(page_title)
 
-        # Container for better appearance
         container = QFrame()
         container.setObjectName("TabContainer")
         container_layout = QFormLayout(container)
-        container_layout.setSpacing(15)
+        container_layout.setSpacing(18)
         container_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
-        # 1. Input (file/folder)
+        # Input
         self.enc_input = DropLineEdit(self.lang_manager.tr('placeholder_drop_file_folder'))
         enc_input_btn = QPushButton(self.lang_manager.tr('button_browse'))
         enc_input_btn.clicked.connect(self._choose_encrypt_input)
@@ -1205,7 +1173,7 @@ class TimencApp(QMainWindow):
         enc_input_layout.addWidget(enc_input_btn)
         container_layout.addRow(QLabel(self.lang_manager.tr('label_file_folder')), enc_input_layout)
 
-        # 2. Output (file)
+        # Output
         self.enc_output = QLineEdit()
         self.enc_output.setPlaceholderText(self.lang_manager.tr('placeholder_output_file'))
         enc_output_btn = QPushButton(self.lang_manager.tr('button_save_as'))
@@ -1216,7 +1184,10 @@ class TimencApp(QMainWindow):
         enc_output_layout.addWidget(enc_output_btn)
         container_layout.addRow(QLabel(self.lang_manager.tr('label_output_file')), enc_output_layout)
 
-        # 3. Password
+        # Password with strength indicator
+        pwd_container = QVBoxLayout()
+        pwd_container.setSpacing(8)
+        
         self.enc_pwd = QLineEdit()
         self.enc_pwd.setEchoMode(QLineEdit.EchoMode.Password)
         self.enc_pwd_toggle_btn = QPushButton(self.lang_manager.tr('button_show'))
@@ -1227,9 +1198,24 @@ class TimencApp(QMainWindow):
         enc_pwd_layout = QHBoxLayout()
         enc_pwd_layout.addWidget(self.enc_pwd)
         enc_pwd_layout.addWidget(self.enc_pwd_toggle_btn)
-        container_layout.addRow(QLabel(self.lang_manager.tr('label_password')), enc_pwd_layout)
+        pwd_container.addLayout(enc_pwd_layout)
+        
+        # Password strength bar
+        self.enc_pwd_strength_bar = QProgressBar()
+        self.enc_pwd_strength_bar.setObjectName("PasswordStrength")
+        self.enc_pwd_strength_bar.setTextVisible(False)
+        self.enc_pwd_strength_bar.setMaximum(100)
+        self.enc_pwd_strength_bar.setValue(0)
+        self.enc_pwd_strength_bar.setMaximumHeight(6)
+        pwd_container.addWidget(self.enc_pwd_strength_bar)
+        
+        self.enc_pwd_strength_label = QLabel("")
+        self.enc_pwd_strength_label.setObjectName("SubHeader")
+        pwd_container.addWidget(self.enc_pwd_strength_label)
+        
+        container_layout.addRow(QLabel(self.lang_manager.tr('label_password')), pwd_container)
 
-        # 4. Keyfile
+        # Keyfile
         self.enc_keyfile = DropLineEdit(self.lang_manager.tr('placeholder_drop_keyfile'))
         enc_keyfile_select_btn = QPushButton(self.lang_manager.tr('button_select'))
         enc_keyfile_gen_btn = QPushButton(self.lang_manager.tr('button_generate'))
@@ -1243,20 +1229,18 @@ class TimencApp(QMainWindow):
         container_layout.addRow(QLabel(self.lang_manager.tr('label_keyfile')), enc_keyfile_layout)
 
         layout.addWidget(container)
-        layout.addStretch()  # Spacer at bottom
+        layout.addStretch()
 
-        # 5. Action button
         self.enc_button = QPushButton(self.lang_manager.tr('button_encrypt'))
         self.enc_button.setObjectName("ActionButton")
         self.enc_button.clicked.connect(self._run_encrypt)
         layout.addWidget(self.enc_button)
 
     def _create_decrypt_ui(self, parent_widget: QWidget):
-        """Create UI for the "Decrypt" page."""
         layout = QVBoxLayout(parent_widget)
-        layout.setContentsMargins(25, 20, 25, 20)
+        layout.setContentsMargins(30, 25, 30, 25)
+        layout.setSpacing(20)
 
-        # Page title
         page_title = QLabel(self.lang_manager.tr('nav_decrypt'))
         page_title.setObjectName("PageHeader")
         layout.addWidget(page_title)
@@ -1264,10 +1248,10 @@ class TimencApp(QMainWindow):
         container = QFrame()
         container.setObjectName("TabContainer")
         container_layout = QFormLayout(container)
-        container_layout.setSpacing(15)
+        container_layout.setSpacing(18)
         container_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
-        # 1. Input (file)
+        # Input
         self.dec_input = DropLineEdit(self.lang_manager.tr('placeholder_drop_timenc'))
         dec_input_btn = QPushButton(self.lang_manager.tr('button_browse'))
         dec_input_btn.clicked.connect(self._choose_decrypt_input)
@@ -1277,7 +1261,7 @@ class TimencApp(QMainWindow):
         dec_input_layout.addWidget(dec_input_btn)
         container_layout.addRow(QLabel(self.lang_manager.tr('label_timenc_file')), dec_input_layout)
 
-        # 2. Output (folder)
+        # Output
         self.dec_output = QLineEdit()
         self.dec_output.setPlaceholderText(self.lang_manager.tr('placeholder_output_folder'))
         dec_output_btn = QPushButton(self.lang_manager.tr('button_select_folder'))
@@ -1288,7 +1272,10 @@ class TimencApp(QMainWindow):
         dec_output_layout.addWidget(dec_output_btn)
         container_layout.addRow(QLabel(self.lang_manager.tr('label_output_folder')), dec_output_layout)
 
-        # 3. Password
+        # Password with strength indicator
+        pwd_container = QVBoxLayout()
+        pwd_container.setSpacing(8)
+        
         self.dec_pwd = QLineEdit()
         self.dec_pwd.setEchoMode(QLineEdit.EchoMode.Password)
         self.dec_pwd_toggle_btn = QPushButton(self.lang_manager.tr('button_show'))
@@ -1299,9 +1286,24 @@ class TimencApp(QMainWindow):
         dec_pwd_layout = QHBoxLayout()
         dec_pwd_layout.addWidget(self.dec_pwd)
         dec_pwd_layout.addWidget(self.dec_pwd_toggle_btn)
-        container_layout.addRow(QLabel(self.lang_manager.tr('label_password')), dec_pwd_layout)
+        pwd_container.addLayout(dec_pwd_layout)
+        
+        # Password strength bar
+        self.dec_pwd_strength_bar = QProgressBar()
+        self.dec_pwd_strength_bar.setObjectName("PasswordStrength")
+        self.dec_pwd_strength_bar.setTextVisible(False)
+        self.dec_pwd_strength_bar.setMaximum(100)
+        self.dec_pwd_strength_bar.setValue(0)
+        self.dec_pwd_strength_bar.setMaximumHeight(6)
+        pwd_container.addWidget(self.dec_pwd_strength_bar)
+        
+        self.dec_pwd_strength_label = QLabel("")
+        self.dec_pwd_strength_label.setObjectName("SubHeader")
+        pwd_container.addWidget(self.dec_pwd_strength_label)
+        
+        container_layout.addRow(QLabel(self.lang_manager.tr('label_password')), pwd_container)
 
-        # 4. Keyfile - NUR "Auswählen" Button, KEIN "Generieren" Button
+        # Keyfile
         self.dec_keyfile = DropLineEdit(self.lang_manager.tr('placeholder_drop_keyfile'))
         dec_keyfile_select_btn = QPushButton(self.lang_manager.tr('button_select'))
         dec_keyfile_select_btn.clicked.connect(partial(self._choose_keyfile, self.dec_keyfile))
@@ -1314,18 +1316,16 @@ class TimencApp(QMainWindow):
         layout.addWidget(container)
         layout.addStretch()
 
-        # 5. Action button
         self.dec_button = QPushButton(self.lang_manager.tr('button_decrypt'))
         self.dec_button.setObjectName("ActionButton")
         self.dec_button.clicked.connect(self._run_decrypt)
         layout.addWidget(self.dec_button)
 
     def _create_settings_ui(self, parent_widget: QWidget):
-        """Create UI for the "Settings" page."""
         layout = QVBoxLayout(parent_widget)
-        layout.setContentsMargins(25, 20, 25, 20)
+        layout.setContentsMargins(30, 25, 30, 25)
+        layout.setSpacing(20)
 
-        # Page title
         page_title = QLabel(self.lang_manager.tr('nav_settings'))
         page_title.setObjectName("PageHeader")
         layout.addWidget(page_title)
@@ -1333,14 +1333,12 @@ class TimencApp(QMainWindow):
         container = QFrame()
         container.setObjectName("TabContainer")
         container_layout = QFormLayout(container)
-        container_layout.setSpacing(15)
+        container_layout.setSpacing(18)
         
-        # 1. Language selection
         self.lang_combo = QComboBox()
         self.lang_combo.addItem(self.lang_manager.tr('label_lang_de'), "de")
         self.lang_combo.addItem(self.lang_manager.tr('label_lang_en'), "en")
         
-        # Select current language
         current_lang_code = self.lang_manager.current_lang
         index = self.lang_combo.findData(current_lang_code)
         if index != -1:
@@ -1349,9 +1347,8 @@ class TimencApp(QMainWindow):
         self.lang_combo.currentIndexChanged.connect(self._on_language_change)
         container_layout.addRow(QLabel(self.lang_manager.tr('label_language')), self.lang_combo)
 
-        # 2. Restart hint
         self.lang_info_label = QLabel(self.lang_manager.tr('label_restart_info'))
-        self.lang_info_label.setObjectName("SubHeader")  # Reuse style
+        self.lang_info_label.setObjectName("SubHeader")
         self.lang_info_label.setWordWrap(True)
         container_layout.addRow(self.lang_info_label)
 
@@ -1359,15 +1356,56 @@ class TimencApp(QMainWindow):
         layout.addStretch()
 
     def _on_language_change(self, index: int):
-        """Called when language is changed in dropdown."""
         lang_code = self.lang_combo.itemData(index)
-        # Save setting. Will be loaded on next app start.
         self.settings.setValue("language", lang_code)
 
-    # --- UI Interaction Handlers ---
+    def _update_enc_password_strength(self):
+        password = self.enc_pwd.text()
+        strength, label = check_password_strength(password)
+        
+        self.enc_pwd_strength_bar.setValue(strength)
+        
+        if label == "weak":
+            self.enc_pwd_strength_bar.setObjectName("WeakPassword")
+            self.enc_pwd_strength_label.setText(f"🔴 {self.lang_manager.tr('pwd_strength_weak')}")
+        elif label == "medium":
+            self.enc_pwd_strength_bar.setObjectName("MediumPassword")
+            self.enc_pwd_strength_label.setText(f"🟡 {self.lang_manager.tr('pwd_strength_medium')}")
+        elif label == "strong":
+            self.enc_pwd_strength_bar.setObjectName("StrongPassword")
+            self.enc_pwd_strength_label.setText(f"🟢 {self.lang_manager.tr('pwd_strength_strong')}")
+        elif label == "very_strong":
+            self.enc_pwd_strength_bar.setObjectName("VeryStrongPassword")
+            self.enc_pwd_strength_label.setText(f"🟢 {self.lang_manager.tr('pwd_strength_very_strong')}")
+        else:
+            self.enc_pwd_strength_label.setText("")
+        
+        self.enc_pwd_strength_bar.setStyle(self.enc_pwd_strength_bar.style())
+
+    def _update_dec_password_strength(self):
+        password = self.dec_pwd.text()
+        strength, label = check_password_strength(password)
+        
+        self.dec_pwd_strength_bar.setValue(strength)
+        
+        if label == "weak":
+            self.dec_pwd_strength_bar.setObjectName("WeakPassword")
+            self.dec_pwd_strength_label.setText(f"🔴 {self.lang_manager.tr('pwd_strength_weak')}")
+        elif label == "medium":
+            self.dec_pwd_strength_bar.setObjectName("MediumPassword")
+            self.dec_pwd_strength_label.setText(f"🟡 {self.lang_manager.tr('pwd_strength_medium')}")
+        elif label == "strong":
+            self.dec_pwd_strength_bar.setObjectName("StrongPassword")
+            self.dec_pwd_strength_label.setText(f"🟢 {self.lang_manager.tr('pwd_strength_strong')}")
+        elif label == "very_strong":
+            self.dec_pwd_strength_bar.setObjectName("VeryStrongPassword")
+            self.dec_pwd_strength_label.setText(f"🟢 {self.lang_manager.tr('pwd_strength_very_strong')}")
+        else:
+            self.dec_pwd_strength_label.setText("")
+        
+        self.dec_pwd_strength_bar.setStyle(self.dec_pwd_strength_bar.style())
 
     def _choose_encrypt_input(self):
-        """Select a file OR folder (with fallback, like in original)."""
         path, _ = QFileDialog.getOpenFileName(self, self.lang_manager.tr('dialog_choose_enc_input_file'))
         if not path:
             path = QFileDialog.getExistingDirectory(self, self.lang_manager.tr('dialog_choose_enc_input_folder'))
@@ -1377,7 +1415,6 @@ class TimencApp(QMainWindow):
             self._autosuggest_encrypt_output()
 
     def _choose_encrypt_output(self):
-        """Select a target file for saving."""
         default_name = self._get_suggested_enc_output() or self.lang_manager.tr('default_enc_filename')
         path, _ = QFileDialog.getSaveFileName(self, self.lang_manager.tr('dialog_save_enc_output'),
                                               default_name, self.lang_manager.tr('dialog_timenc_files'))
@@ -1385,7 +1422,6 @@ class TimencApp(QMainWindow):
             self.enc_output.setText(path)
 
     def _choose_decrypt_input(self):
-        """Select a .timenc file for decryption."""
         filter = f"{self.lang_manager.tr('dialog_timenc_files')};;{self.lang_manager.tr('dialog_all_files')}"
         path, _ = QFileDialog.getOpenFileName(self, self.lang_manager.tr('dialog_choose_dec_input'),
                                               filter=filter)
@@ -1394,34 +1430,27 @@ class TimencApp(QMainWindow):
             self._autosuggest_decrypt_output()
 
     def _choose_decrypt_output(self):
-        """Select a target folder for decrypted files."""
         path = QFileDialog.getExistingDirectory(self, self.lang_manager.tr('dialog_choose_dec_output'))
         if path:
             self.dec_output.setText(path)
 
     def _choose_keyfile(self, target_line_edit: QLineEdit):
-        """Select a keyfile for the specified field."""
         path, _ = QFileDialog.getOpenFileName(self, self.lang_manager.tr('dialog_choose_keyfile'))
         if path:
             target_line_edit.setText(path)
 
     def _generate_keyfile(self, target_line_edit: QLineEdit):
-        """Generate a new keyfile and populate the field."""
         path, _ = QFileDialog.getSaveFileName(self, self.lang_manager.tr('dialog_save_keyfile'), "timenc.keyfile")
         if not path:
             return
         
         try:
-            # generate_keyfile is globally defined
-            # We pass the tr_func for error messages
             self.run_task(generate_keyfile, path, tr_func=self.lang_manager.tr)
-            target_line_edit.setText(path)  # Set on success
+            target_line_edit.setText(path)
         except Exception as e:
             self._on_task_error(self.lang_manager.tr('error_generate_keyfile', error=str(e)))
 
     def _toggle_password_visibility(self, checked: bool):
-        """Toggle password visibility."""
-        # Find out which button was pressed
         sender = self.sender()
         if sender == self.enc_pwd_toggle_btn:
             target_edit = self.enc_pwd
@@ -1437,16 +1466,13 @@ class TimencApp(QMainWindow):
             target_edit.setEchoMode(QLineEdit.EchoMode.Password)
             sender.setText(self.lang_manager.tr('button_show'))
 
-    # --- Autosuggest Logic ---
-
     def _get_suggested_enc_output(self) -> str:
-        """Suggest an output name based on input."""
         in_path_str = self.enc_input.text().strip()
         if not in_path_str:
             return ""
         
         p = Path(in_path_str)
-        if not p.exists():  # Path might still be incomplete
+        if not p.exists():
              return f"{p.name}.timenc"
 
         if p.is_dir():
@@ -1455,29 +1481,24 @@ class TimencApp(QMainWindow):
             return str(p.parent / f"{p.stem}.timenc")
 
     def _autosuggest_encrypt_output(self):
-        """Fill output field if it's empty."""
         if not self.enc_output.text().strip():
             suggestion = self._get_suggested_enc_output()
             if suggestion:
                 self.enc_output.setText(suggestion)
 
     def _autosuggest_decrypt_output(self):
-        """Suggest the input file's folder as output folder."""
         in_path_str = self.dec_input.text().strip()
         if not in_path_str or not self.dec_output.text().strip():
             p = Path(in_path_str)
             if p.is_file():
                 self.dec_output.setText(str(p.parent))
-            elif p.is_dir():  # Shouldn't happen, but better safe
+            elif p.is_dir():
                 self.dec_output.setText(str(p))
 
-    # --- Crypto Action Handlers (with threading) ---
-
     def _run_encrypt(self):
-        """Start encryption thread."""
         input_path = self.enc_input.text().strip()
         output_file = self.enc_output.text().strip()
-        password = self.enc_pwd.text()  # .strip() removes potentially intended spaces
+        password = self.enc_pwd.text()
         keyfile_path = self.enc_keyfile.text().strip()
         
         if not input_path or not output_file:
@@ -1495,11 +1516,10 @@ class TimencApp(QMainWindow):
             output_file, 
             password, 
             keyfile_path_or_none,
-            tr_func=self.lang_manager.tr  # Pass translation function
+            tr_func=self.lang_manager.tr
         )
 
     def _run_decrypt(self):
-        """Start decryption thread."""
         input_file = self.dec_input.text().strip()
         out_dir = self.dec_output.text().strip()
         password = self.dec_pwd.text()
@@ -1520,21 +1540,21 @@ class TimencApp(QMainWindow):
             out_dir,
             password,
             keyfile_path_or_none,
-            tr_func=self.lang_manager.tr  # Pass translation function
+            tr_func=self.lang_manager.tr
         )
 
     def run_task(self, func, *args, **kwargs):
-        """Generic function to start a worker thread."""
         if self.thread is not None and self.thread.isRunning():
-            # Prevent two tasks running simultaneously
             return 
             
         self.set_status(self.lang_manager.tr('status_processing'))
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)  # Indeterminate
         self.enc_button.setEnabled(False)
         self.dec_button.setEnabled(False)
 
         self.thread = QThread()
-        self.worker = Worker(func, *args, **kwargs)  # kwargs now contains tr_func
+        self.worker = Worker(func, *args, **kwargs)
         self.worker.moveToThread(self.thread)
 
         self.thread.started.connect(self.worker.run)
@@ -1547,75 +1567,65 @@ class TimencApp(QMainWindow):
 
         self.thread.start()
 
-    # --- Thread Callbacks & UI Feedback ---
-
     def set_status(self, message: str, timeout: int = 0):
-        """Set the status bar."""
         if timeout > 0:
             self.status_bar.showMessage(message, timeout)
         else:
             self.status_bar.showMessage(message)
 
     def _on_task_error(self, message: str):
-        """Called on worker error."""
+        self.progress_bar.setVisible(False)
         self.set_status(self.lang_manager.tr('status_error', message=message))
         self._show_error_dialog(message)
         self.enc_button.setEnabled(True)
         self.dec_button.setEnabled(True)
 
     def _on_task_finished(self, message: str):
-        """Called on worker success."""
+        self.progress_bar.setVisible(False)
         self.set_status(self.lang_manager.tr('status_success', message=message))
-        self._show_info_dialog(message)
+        self._show_success_notification(message)
         self.enc_button.setEnabled(True)
         self.dec_button.setEnabled(True)
 
     def _show_error_dialog(self, message: str):
-        """Show error popup."""
         QMessageBox.critical(self, self.lang_manager.tr('dialog_title_error'),
                              self.lang_manager.tr('dialog_error_prefix', message=message))
 
     def _show_info_dialog(self, message: str):
-        """Show info popup."""
         QMessageBox.information(self, self.lang_manager.tr('dialog_title_success'), message)
 
+    def _show_success_notification(self, message: str):
+        """Show a modern success notification instead of blocking dialog."""
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(self.lang_manager.tr('dialog_title_success'))
+        msg_box.setText(message)
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        
+        # Auto-close after 5 seconds
+        QTimer.singleShot(5000, msg_box.accept)
+        msg_box.exec()
 
-# -------------------------------------------------------------------
-#
-#                         APPLICATION STARTUP
-#
-# -------------------------------------------------------------------
 
 def main():
-    """Main application entry point."""
     app = QApplication(sys.argv)
     
-    # Set organization and app name for QSettings
     app.setOrganizationName("Timenc")
     app.setApplicationName("TimencApp")
 
-    # Load saved language, 'de' as default
     settings = QSettings()
     lang_code = settings.value("language", "de")
     
-    # Initialize language manager
     lang_manager = LanguageManager(lang_code)
 
-    # Apply stylesheet
     app.setStyleSheet(APP_STYLESHEET)
 
-    # --- MODIFIZIERT 3/4 (NEUER BLOCK) ---
-    # Prüfe auf Kommandozeilen-Argumente
     file_to_open = None
     if len(sys.argv) > 1:
         path_arg = sys.argv[1]
-        # Sicherstellen, dass das Argument ein existierender Dateipfad ist
         if os.path.isfile(path_arg):
              file_to_open = path_arg
-    # --- ENDE MODIFIZIERUNG ---
 
-    # Create main window with language manager
-    # --- MODIFIZIERT 4/4 ---
     window = TimencApp(lang_manager, file_to_open=file_to_open)
     window.show()
 
