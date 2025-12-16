@@ -18,7 +18,7 @@ import json
 # Configuration Constants
 # -------------------------------------------------------------------
 
-APP_VERSION = "1.3.2"
+APP_VERSION = "1.4.0"
 ENCRYPTION_FORMAT_VERSION = 2
 
 try:
