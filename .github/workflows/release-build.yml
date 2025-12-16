@@ -1,1 +1,83 @@
+name: Build Release Binaries
 
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            artifact_name: TimENC-Windows.exe
+            pyinstaller_flags: --onefile --windowed --icon Images/TimENC-Icon.ico --name TimENC
+
+          - os: macos-14
+            name: macOS
+            artifact_name: TimENC-macOS.zip
+            pyinstaller_flags: --onedir --windowed --icon Images/TimENC-Icon.icns --name TimENC
+
+          - os: ubuntu-latest
+            name: Linux
+            artifact_name: TimENC-Linux
+            pyinstaller_flags: --onefile --icon Images/TimENC-Icon.png --name TimENC
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller ${{ matrix.pyinstaller_flags }} timenc.py
+
+      # ---------- Prepare artifacts ----------
+
+      - name: Prepare artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Copy-Item dist\TimENC.exe ${{ matrix.artifact_name }}
+
+      - name: Prepare artifact (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          cp dist/TimENC ${{ matrix.artifact_name }}
+
+      - name: Prepare artifact (macOS)
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          zip -r ${{ matrix.artifact_name }} dist/TimENC.app
+
+      # ---------- Upload to release ----------
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.artifact_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
