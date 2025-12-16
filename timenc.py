@@ -6,12 +6,13 @@ import tempfile
 import tarfile
 import secrets
 from pathlib import Path
-from typing import Tuple, Optional, Callable, Any
+from typing import Tuple, Optional, Callable, Any, Dict
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from argon2.low_level import hash_secret_raw, Type
 import stat
 import errno
 from functools import partial
+import json
 
 # -------------------------------------------------------------------
 # Configuration Constants
@@ -25,13 +26,16 @@ try:
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QStackedWidget, QLabel, QLineEdit, QPushButton, QFormLayout,
         QFileDialog, QMessageBox, QStatusBar, QFrame, QComboBox,
-        QProgressBar, QGraphicsOpacityEffect
+        QProgressBar, QGraphicsOpacityEffect, QDialog, QListWidget,
+        QListWidgetItem, QGroupBox, QGridLayout, QKeySequenceEdit,
+        QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+        QDialogButtonBox
     )
     from PySide6.QtCore import (
         QThread, QObject, Signal, Slot, Qt, QSettings, QSize,
         QPropertyAnimation, QEasingCurve, QTimer, QEvent
     )
-    from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
+    from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeySequence, QShortcut, QAction
 except ImportError:
     print("Error: PySide6 not found.")
     print("Please install it using: pip install PySide6")
@@ -109,6 +113,30 @@ LANGUAGES = {
         'pwd_strength_medium': "Mittel",
         'pwd_strength_strong': "Stark",
         'pwd_strength_very_strong': "Sehr stark",
+        'settings_shortcuts': "Tastenkombinationen",
+        'settings_general': "Allgemein",
+        'shortcuts_dialog_title': "Tastenkombinationen anpassen",
+        'shortcut_encrypt_tab': "Verschlüsselungs-Tab",
+        'shortcut_decrypt_tab': "Entschlüsselungs-Tab",
+        'shortcut_settings_tab': "Einstellungs-Tab",
+        'shortcut_open_file': "Datei öffnen",
+        'shortcut_save_as': "Speichern unter",
+        'shortcut_quit': "Beenden",
+        'shortcut_show_help': "Hilfe anzeigen",
+        'shortcut_reset_all': "Alle zurücksetzen",
+        'shortcut_apply': "Übernehmen",
+        'button_customize_shortcuts': "Tastenkombinationen anpassen...",
+        'button_reset_shortcuts': "Standard wiederherstellen",
+        'button_apply_shortcuts': "Übernehmen",
+        'button_cancel': "Abbrechen",
+        'button_ok': "OK",
+        'label_shortcut_action': "Aktion",
+        'label_shortcut_key': "Tastenkombination",
+        'label_current_shortcut': "Aktuelle Kombination",
+        'label_new_shortcut': "Neue Kombination",
+        'message_shortcut_conflict': "Tastenkombination wird bereits verwendet für: {action}",
+        'message_shortcut_reset': "Alle Tastenkombinationen wurden zurückgesetzt",
+        'message_shortcut_applied': "Tastenkombinationen wurden übernommen",
     },
     'en': {
         'app_title': "Timenc {version} - Secure Encryption",
@@ -176,6 +204,30 @@ LANGUAGES = {
         'pwd_strength_medium': "Medium",
         'pwd_strength_strong': "Strong",
         'pwd_strength_very_strong': "Very Strong",
+        'settings_shortcuts': "Keyboard Shortcuts",
+        'settings_general': "General",
+        'shortcuts_dialog_title': "Customize Keyboard Shortcuts",
+        'shortcut_encrypt_tab': "Encrypt Tab",
+        'shortcut_decrypt_tab': "Decrypt Tab",
+        'shortcut_settings_tab': "Settings Tab",
+        'shortcut_open_file': "Open File",
+        'shortcut_save_as': "Save As",
+        'shortcut_quit': "Quit",
+        'shortcut_show_help': "Show Help",
+        'shortcut_reset_all': "Reset All",
+        'shortcut_apply': "Apply",
+        'button_customize_shortcuts': "Customize Shortcuts...",
+        'button_reset_shortcuts': "Restore Defaults",
+        'button_apply_shortcuts': "Apply",
+        'button_cancel': "Cancel",
+        'button_ok': "OK",
+        'label_shortcut_action': "Action",
+        'label_shortcut_key': "Shortcut",
+        'label_current_shortcut': "Current Shortcut",
+        'label_new_shortcut': "New Shortcut",
+        'message_shortcut_conflict': "Shortcut already used for: {action}",
+        'message_shortcut_reset': "All shortcuts have been reset to defaults",
+        'message_shortcut_applied': "Shortcuts have been applied",
     }
 }
 
@@ -198,6 +250,72 @@ class LanguageManager:
             except KeyError:
                 return f"<{key} (format error)>"
         return template
+
+
+# -------------------------------------------------------------------
+#                         SHORTCUT MANAGER
+# -------------------------------------------------------------------
+
+class ShortcutManager:
+    """Manages keyboard shortcuts for the application."""
+    
+    DEFAULT_SHORTCUTS = {
+        'encrypt_tab': 'Ctrl+E',
+        'decrypt_tab': 'Ctrl+D',
+        'settings_tab': 'Ctrl+,',
+        'open_file': 'Ctrl+O',
+        'save_as': 'Ctrl+Shift+S',
+        'quit': 'Ctrl+Q',
+        'show_help': 'F1',
+        'reset_all': 'Ctrl+R',
+        'apply': 'Ctrl+Return'
+    }
+    
+    def __init__(self, settings: QSettings):
+        self.settings = settings
+        self.shortcuts = {}
+        self.load_shortcuts()
+    
+    def load_shortcuts(self):
+        """Load shortcuts from settings or use defaults."""
+        self.shortcuts = {}
+        for key, default in self.DEFAULT_SHORTCUTS.items():
+            saved = self.settings.value(f"shortcuts/{key}", default)
+            self.shortcuts[key] = saved
+    
+    def save_shortcuts(self):
+        """Save shortcuts to settings."""
+        for key, shortcut in self.shortcuts.items():
+            self.settings.setValue(f"shortcuts/{key}", shortcut)
+    
+    def reset_to_defaults(self):
+        """Reset all shortcuts to defaults."""
+        self.shortcuts = self.DEFAULT_SHORTCUTS.copy()
+        self.save_shortcuts()
+    
+    def set_shortcut(self, key: str, shortcut: str):
+        """Set a specific shortcut."""
+        self.shortcuts[key] = shortcut
+        self.save_shortcuts()
+    
+    def get_shortcut(self, key: str) -> str:
+        """Get a specific shortcut."""
+        return self.shortcuts.get(key, self.DEFAULT_SHORTCUTS.get(key, ""))
+    
+    def get_all_shortcuts(self) -> Dict[str, str]:
+        """Get all shortcuts with their descriptions."""
+        descriptions = {
+            'encrypt_tab': 'shortcut_encrypt_tab',
+            'decrypt_tab': 'shortcut_decrypt_tab',
+            'settings_tab': 'shortcut_settings_tab',
+            'open_file': 'shortcut_open_file',
+            'save_as': 'shortcut_save_as',
+            'quit': 'shortcut_quit',
+            'show_help': 'shortcut_show_help',
+            'reset_all': 'shortcut_reset_all',
+            'apply': 'shortcut_apply'
+        }
+        return {desc_key: self.shortcuts.get(key, "") for key, desc_key in descriptions.items()}
 
 
 # -------------------------------------------------------------------
@@ -717,6 +835,58 @@ QComboBox QAbstractItemView {
     padding: 4px;
 }
 
+/* Key Sequence Edit */
+QKeySequenceEdit {
+    background-color: #0D1117;
+    border: 1.5px solid #30363D;
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: #E6EDF3;
+    font-size: 14px;
+}
+
+QKeySequenceEdit:hover {
+    border-color: #484F58;
+}
+
+QKeySequenceEdit:focus {
+    border-color: #58A6FF;
+    background-color: #161B22;
+}
+
+/* Table Widget */
+QTableWidget {
+    background-color: #0D1117;
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    gridline-color: #30363D;
+    alternate-background-color: #161B22;
+}
+
+QTableWidget::item {
+    padding: 8px;
+    border-bottom: 1px solid #21262D;
+}
+
+QTableWidget::item:selected {
+    background-color: #1F6FEB;
+    color: #FFFFFF;
+}
+
+QHeaderView::section {
+    background-color: #161B22;
+    color: #C9D1D9;
+    padding: 12px;
+    border: none;
+    border-right: 1px solid #21262D;
+    border-bottom: 1px solid #21262D;
+    font-weight: 600;
+}
+
+QHeaderView::section:last {
+    border-right: none;
+}
+
 /* ===== BUTTONS ===== */
 
 /* Standard Buttons */
@@ -798,6 +968,17 @@ QPushButton#TogglePasswordButton:checked {
     color: #FFFFFF;
 }
 
+/* Dialog Buttons */
+QDialogButtonBox {
+    background-color: transparent;
+    border-top: 1px solid #21262D;
+    padding-top: 20px;
+}
+
+QDialogButtonBox QPushButton {
+    min-width: 80px;
+}
+
 /* ===== PROGRESS BAR ===== */
 QProgressBar {
     background-color: #161B22;
@@ -863,6 +1044,25 @@ QLabel {
     color: #C9D1D9;
     background-color: transparent;
     font-weight: 500;
+}
+
+/* Group Box */
+QGroupBox {
+    border: 1px solid #30363D;
+    border-radius: 8px;
+    margin-top: 12px;
+    padding-top: 10px;
+    font-weight: 600;
+    color: #C9D1D9;
+    background-color: #161B22;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 8px;
+    background-color: #161B22;
 }
 
 /* ===== SCROLLBARS ===== */
@@ -1010,6 +1210,229 @@ class DropLineEdit(QLineEdit):
 
 
 # -------------------------------------------------------------------
+#                         SHORTCUTS DIALOG
+# -------------------------------------------------------------------
+
+class ShortcutsDialog(QDialog):
+    """Dialog to customize keyboard shortcuts."""
+    
+    def __init__(self, shortcut_manager: ShortcutManager, lang_manager: LanguageManager, parent=None):
+        super().__init__(parent)
+        self.shortcut_manager = shortcut_manager
+        self.lang_manager = lang_manager
+        self.current_shortcuts = shortcut_manager.get_all_shortcuts()
+        self.new_shortcuts = self.current_shortcuts.copy()
+        self.init_ui()
+        self.load_current_shortcuts()
+        
+    def init_ui(self):
+        self.setWindowTitle(self.lang_manager.tr('shortcuts_dialog_title'))
+        self.setMinimumSize(700, 500)
+        
+        layout = QVBoxLayout(self)
+        
+        # Create table for shortcuts
+        self.table = QTableWidget()
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels([
+            self.lang_manager.tr('label_shortcut_action'),
+            self.lang_manager.tr('label_current_shortcut'),
+            self.lang_manager.tr('label_new_shortcut')
+        ])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setAlternatingRowColors(True)
+        
+        layout.addWidget(self.table)
+        
+        # Button layout
+        button_layout = QHBoxLayout()
+        
+        self.reset_button = QPushButton(self.lang_manager.tr('button_reset_shortcuts'))
+        self.reset_button.clicked.connect(self.reset_to_defaults)
+        
+        button_layout.addWidget(self.reset_button)
+        button_layout.addStretch()
+        
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | 
+            QDialogButtonBox.StandardButton.Apply | 
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        
+        self.button_box.button(QDialogButtonBox.StandardButton.Ok).setText(self.lang_manager.tr('button_ok'))
+        self.button_box.button(QDialogButtonBox.StandardButton.Apply).setText(self.lang_manager.tr('button_apply_shortcuts'))
+        self.button_box.button(QDialogButtonBox.StandardButton.Cancel).setText(self.lang_manager.tr('button_cancel'))
+        
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        self.button_box.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self.apply_shortcuts)
+        
+        button_layout.addWidget(self.button_box)
+        layout.addLayout(button_layout)
+        
+        # Connect table signals
+        self.table.cellChanged.connect(self.on_cell_changed)
+        
+    def load_current_shortcuts(self):
+        """Load current shortcuts into the table."""
+        shortcuts_mapping = {
+            'shortcut_encrypt_tab': self.lang_manager.tr('shortcut_encrypt_tab'),
+            'shortcut_decrypt_tab': self.lang_manager.tr('shortcut_decrypt_tab'),
+            'shortcut_settings_tab': self.lang_manager.tr('shortcut_settings_tab'),
+            'shortcut_open_file': self.lang_manager.tr('shortcut_open_file'),
+            'shortcut_save_as': self.lang_manager.tr('shortcut_save_as'),
+            'shortcut_quit': self.lang_manager.tr('shortcut_quit'),
+            'shortcut_show_help': self.lang_manager.tr('shortcut_show_help'),
+            'shortcut_reset_all': self.lang_manager.tr('shortcut_reset_all'),
+            'shortcut_apply': self.lang_manager.tr('shortcut_apply')
+        }
+        
+        # Map internal keys to display names
+        internal_to_display = {
+            'encrypt_tab': 'shortcut_encrypt_tab',
+            'decrypt_tab': 'shortcut_decrypt_tab',
+            'settings_tab': 'shortcut_settings_tab',
+            'open_file': 'shortcut_open_file',
+            'save_as': 'shortcut_save_as',
+            'quit': 'shortcut_quit',
+            'show_help': 'shortcut_show_help',
+            'reset_all': 'shortcut_reset_all',
+            'apply': 'shortcut_apply'
+        }
+        
+        self.table.setRowCount(len(internal_to_display))
+        
+        for row, (internal_key, display_key) in enumerate(internal_to_display.items()):
+            # Action name
+            action_item = QTableWidgetItem(shortcuts_mapping[display_key])
+            action_item.setFlags(action_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(row, 0, action_item)
+            
+            # Current shortcut
+            current_shortcut = self.current_shortcuts.get(internal_key, "")
+            current_item = QTableWidgetItem(current_shortcut)
+            current_item.setFlags(current_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(row, 1, current_item)
+            
+            # New shortcut editor
+            shortcut_edit = QKeySequenceEdit()
+            if current_shortcut:
+                shortcut_edit.setKeySequence(QKeySequence(current_shortcut))
+            self.table.setCellWidget(row, 2, shortcut_edit)
+            
+            # Store internal key reference
+            shortcut_edit.internal_key = internal_key
+        
+        self.table.resizeColumnsToContents()
+        
+    def on_cell_changed(self, row, column):
+        """Handle cell changes - not used directly since we use QKeySequenceEdit widgets."""
+        pass
+        
+    def get_shortcuts_from_table(self):
+        """Extract shortcuts from the table."""
+        shortcuts = {}
+        for row in range(self.table.rowCount()):
+            action_item = self.table.item(row, 0)
+            shortcut_edit = self.table.cellWidget(row, 2)
+            
+            if action_item and shortcut_edit:
+                internal_key = getattr(shortcut_edit, 'internal_key', None)
+                if internal_key:
+                    key_sequence = shortcut_edit.keySequence()
+                    shortcuts[internal_key] = key_sequence.toString(QKeySequence.SequenceFormat.NativeText)
+        
+        return shortcuts
+        
+    def check_for_conflicts(self, shortcuts: Dict[str, str]) -> Optional[str]:
+        """Check for duplicate shortcuts."""
+        used_shortcuts = {}
+        for internal_key, shortcut in shortcuts.items():
+            if shortcut and shortcut in used_shortcuts:
+                # Get the display name for the conflicting action
+                conflicting_key = used_shortcuts[shortcut]
+                return f"{self.get_action_display_name(conflicting_key)} ({shortcut})"
+            if shortcut:
+                used_shortcuts[shortcut] = internal_key
+        return None
+        
+    def get_action_display_name(self, internal_key: str) -> str:
+        """Get display name for an internal key."""
+        mapping = {
+            'encrypt_tab': self.lang_manager.tr('shortcut_encrypt_tab'),
+            'decrypt_tab': self.lang_manager.tr('shortcut_decrypt_tab'),
+            'settings_tab': self.lang_manager.tr('shortcut_settings_tab'),
+            'open_file': self.lang_manager.tr('shortcut_open_file'),
+            'save_as': self.lang_manager.tr('shortcut_save_as'),
+            'quit': self.lang_manager.tr('shortcut_quit'),
+            'show_help': self.lang_manager.tr('shortcut_show_help'),
+            'reset_all': self.lang_manager.tr('shortcut_reset_all'),
+            'apply': self.lang_manager.tr('shortcut_apply')
+        }
+        return mapping.get(internal_key, internal_key)
+        
+    def apply_shortcuts(self):
+        """Apply the shortcuts from the table."""
+        shortcuts = self.get_shortcuts_from_table()
+        
+        # Check for conflicts
+        conflict = self.check_for_conflicts(shortcuts)
+        if conflict:
+            QMessageBox.warning(
+                self,
+                self.lang_manager.tr('dialog_title_error'),
+                self.lang_manager.tr('message_shortcut_conflict', action=conflict)
+            )
+            return
+        
+        # Apply shortcuts
+        for internal_key, shortcut in shortcuts.items():
+            self.shortcut_manager.set_shortcut(internal_key, shortcut)
+        
+        # Update current shortcuts display
+        for row in range(self.table.rowCount()):
+            shortcut_edit = self.table.cellWidget(row, 2)
+            if shortcut_edit:
+                internal_key = getattr(shortcut_edit, 'internal_key', None)
+                if internal_key:
+                    current_shortcut = shortcuts.get(internal_key, "")
+                    current_item = QTableWidgetItem(current_shortcut)
+                    current_item.setFlags(current_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    self.table.setItem(row, 1, current_item)
+        
+        QMessageBox.information(
+            self,
+            self.lang_manager.tr('dialog_title_success'),
+            self.lang_manager.tr('message_shortcut_applied')
+        )
+        
+    def reset_to_defaults(self):
+        """Reset all shortcuts to defaults."""
+        reply = QMessageBox.question(
+            self,
+            self.lang_manager.tr('dialog_title_success'),
+            "Alle Tastenkombinationen auf Standard zurücksetzen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self.shortcut_manager.reset_to_defaults()
+            self.load_current_shortcuts()
+            QMessageBox.information(
+                self,
+                self.lang_manager.tr('dialog_title_success'),
+                self.lang_manager.tr('message_shortcut_reset')
+            )
+            
+    def accept(self):
+        """Apply shortcuts and close dialog."""
+        self.apply_shortcuts()
+        super().accept()
+
+
+# -------------------------------------------------------------------
 #                         MAIN APPLICATION
 # -------------------------------------------------------------------
 
@@ -1021,6 +1444,7 @@ class TimencApp(QMainWindow):
         self.worker = None
         self.lang_manager = lang_manager
         self.settings = QSettings("Timenc", "TimencApp")
+        self.shortcut_manager = ShortcutManager(self.settings)
 
         self.setWindowTitle(self.lang_manager.tr('app_title', version=APP_VERSION))
         self.setGeometry(100, 100, 1100, 750)
@@ -1078,18 +1502,85 @@ class TimencApp(QMainWindow):
                 self._navigate(1, self.nav_decrypt_btn)
 
     def _setup_shortcuts(self):
-        """Setup keyboard shortcuts."""
-        # Ctrl+E = Encrypt tab
-        encrypt_shortcut = QShortcut(QKeySequence("Ctrl+E"), self)
-        encrypt_shortcut.activated.connect(lambda: self._navigate(0, self.nav_encrypt_btn))
+        """Setup keyboard shortcuts from shortcut manager."""
+        # Clear existing shortcuts
+        for shortcut in getattr(self, '_shortcuts', []):
+            if shortcut:
+                try:
+                    shortcut.setEnabled(False)
+                except:
+                    pass
         
-        # Ctrl+D = Decrypt tab
-        decrypt_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
-        decrypt_shortcut.activated.connect(lambda: self._navigate(1, self.nav_decrypt_btn))
+        self._shortcuts = []
         
-        # Ctrl+, = Settings tab
-        settings_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
-        settings_shortcut.activated.connect(lambda: self._navigate(2, self.nav_settings_btn))
+        # Create shortcuts from manager
+        shortcuts_config = {
+            'encrypt_tab': lambda: self._navigate(0, self.nav_encrypt_btn),
+            'decrypt_tab': lambda: self._navigate(1, self.nav_decrypt_btn),
+            'settings_tab': lambda: self._navigate(2, self.nav_settings_btn),
+            'open_file': self._shortcut_open_file,
+            'save_as': self._shortcut_save_as,
+            'quit': self.close,
+            'show_help': self._shortcut_show_help,
+            'reset_all': self._shortcut_reset_all,
+            'apply': self._shortcut_apply
+        }
+        
+        for key, callback in shortcuts_config.items():
+            shortcut_str = self.shortcut_manager.get_shortcut(key)
+            if shortcut_str:
+                try:
+                    shortcut = QShortcut(QKeySequence(shortcut_str), self)
+                    shortcut.activated.connect(callback)
+                    self._shortcuts.append(shortcut)
+                except Exception as e:
+                    print(f"Error setting shortcut {key}: {e}")
+    
+    def _shortcut_open_file(self):
+        """Handle open file shortcut."""
+        current_page = self.stacked_widget.currentIndex()
+        if current_page == 0:  # Encrypt tab
+            self._choose_encrypt_input()
+        elif current_page == 1:  # Decrypt tab
+            self._choose_decrypt_input()
+    
+    def _shortcut_save_as(self):
+        """Handle save as shortcut."""
+        current_page = self.stacked_widget.currentIndex()
+        if current_page == 0:  # Encrypt tab
+            self._choose_encrypt_output()
+    
+    def _shortcut_show_help(self):
+        """Show help dialog."""
+        QMessageBox.information(
+            self,
+            "Keyboard Shortcuts",
+            "Current shortcuts:\n\n" +
+            "\n".join([f"{self.lang_manager.tr(key.replace('_', 'shortcut_'))}: {value}" 
+                      for key, value in self.shortcut_manager.get_all_shortcuts().items()])
+        )
+    
+    def _shortcut_reset_all(self):
+        """Reset all fields in current tab."""
+        current_page = self.stacked_widget.currentIndex()
+        if current_page == 0:  # Encrypt tab
+            self.enc_input.clear()
+            self.enc_output.clear()
+            self.enc_pwd.clear()
+            self.enc_keyfile.clear()
+        elif current_page == 1:  # Decrypt tab
+            self.dec_input.clear()
+            self.dec_output.clear()
+            self.dec_pwd.clear()
+            self.dec_keyfile.clear()
+    
+    def _shortcut_apply(self):
+        """Apply current action (encrypt/decrypt)."""
+        current_page = self.stacked_widget.currentIndex()
+        if current_page == 0:  # Encrypt tab
+            self._run_encrypt()
+        elif current_page == 1:  # Decrypt tab
+            self._run_decrypt()
 
     def _create_nav_ui(self):
         self.nav_widget = QWidget()
@@ -1332,8 +1823,12 @@ class TimencApp(QMainWindow):
 
         container = QFrame()
         container.setObjectName("TabContainer")
-        container_layout = QFormLayout(container)
-        container_layout.setSpacing(18)
+        container_layout = QVBoxLayout(container)
+        container_layout.setSpacing(25)
+
+        # General settings group
+        general_group = QGroupBox(self.lang_manager.tr('settings_general'))
+        general_layout = QFormLayout(general_group)
         
         self.lang_combo = QComboBox()
         self.lang_combo.addItem(self.lang_manager.tr('label_lang_de'), "de")
@@ -1345,15 +1840,52 @@ class TimencApp(QMainWindow):
             self.lang_combo.setCurrentIndex(index)
             
         self.lang_combo.currentIndexChanged.connect(self._on_language_change)
-        container_layout.addRow(QLabel(self.lang_manager.tr('label_language')), self.lang_combo)
+        general_layout.addRow(QLabel(self.lang_manager.tr('label_language')), self.lang_combo)
 
         self.lang_info_label = QLabel(self.lang_manager.tr('label_restart_info'))
         self.lang_info_label.setObjectName("SubHeader")
         self.lang_info_label.setWordWrap(True)
-        container_layout.addRow(self.lang_info_label)
+        general_layout.addRow(self.lang_info_label)
+        
+        container_layout.addWidget(general_group)
 
+        # Shortcuts group
+        shortcuts_group = QGroupBox(self.lang_manager.tr('settings_shortcuts'))
+        shortcuts_layout = QVBoxLayout(shortcuts_group)
+        
+        # Display current shortcuts
+        shortcuts_text = QLabel()
+        shortcuts_text.setWordWrap(True)
+        shortcuts_text.setTextFormat(Qt.TextFormat.RichText)
+        
+        # Get current shortcuts and format them nicely
+        shortcuts_list = []
+        all_shortcuts = self.shortcut_manager.get_all_shortcuts()
+        
+        for key, shortcut in all_shortcuts.items():
+            if shortcut:  # Only show if shortcut is set
+                display_name = self.lang_manager.tr(key.replace('_', 'shortcut_'))
+                shortcuts_list.append(f"<b>{display_name}:</b> {shortcut}")
+        
+        shortcuts_text.setText("<br>".join(shortcuts_list))
+        shortcuts_layout.addWidget(shortcuts_text)
+        
+        # Customize button
+        self.customize_shortcuts_btn = QPushButton(self.lang_manager.tr('button_customize_shortcuts'))
+        self.customize_shortcuts_btn.clicked.connect(self._show_shortcuts_dialog)
+        shortcuts_layout.addWidget(self.customize_shortcuts_btn)
+        
+        container_layout.addWidget(shortcuts_group)
+        
         layout.addWidget(container)
         layout.addStretch()
+
+    def _show_shortcuts_dialog(self):
+        """Show the shortcuts customization dialog."""
+        dialog = ShortcutsDialog(self.shortcut_manager, self.lang_manager, self)
+        if dialog.exec():
+            # Re-setup shortcuts after changes
+            self._setup_shortcuts()
 
     def _on_language_change(self, index: int):
         lang_code = self.lang_combo.itemData(index)
