@@ -7,8 +7,6 @@ import tarfile
 import secrets
 from pathlib import Path
 from typing import Tuple, Optional, Callable, Any, Dict
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-from argon2.low_level import hash_secret_raw, Type
 import stat
 import errno
 from functools import partial
@@ -18,8 +16,18 @@ import json
 # Configuration Constants
 # -------------------------------------------------------------------
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1" # speed optimized
 ENCRYPTION_FORMAT_VERSION = 2
+
+# -------------------------------------------------------------------
+# LAZY IMPORT HELPERS
+# -------------------------------------------------------------------
+# Wir verschieben die schweren Krypto-Imports hierhin, 
+# damit die GUI sofort startet.
+def get_crypto_tools():
+    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+    from argon2.low_level import hash_secret_raw, Type
+    return ChaCha20Poly1305, hash_secret_raw, Type
 
 try:
     from PySide6.QtWidgets import (
@@ -342,6 +350,9 @@ def _get_tr_func(kwargs: dict[str, Any]) -> Callable:
 
 def derive_key(password: bytes, salt: bytes, time_cost: int, memory_kib: int, 
                parallelism: int, keyfile_bytes: Optional[bytes] = None) -> bytes:
+    # LAZY LOAD: Krypto erst hier laden
+    _, hash_secret_raw, Type = get_crypto_tools()
+    
     if keyfile_bytes:
         password = password + b"::KEYFILE::" + keyfile_bytes
     return hash_secret_raw(
@@ -496,6 +507,9 @@ def secure_delete(path: Path):
 
 def encrypt(input_path: str, output_file: str, password: str, 
             keyfile_path: Optional[str] = None, **kwargs) -> str:
+    # LAZY LOAD: ChaCha20Poly1305 erst jetzt laden
+    ChaCha20Poly1305, _, _ = get_crypto_tools()
+    
     tr_func = _get_tr_func(kwargs)
     inp = Path(input_path)
     if not inp.exists():
@@ -568,6 +582,9 @@ def encrypt(input_path: str, output_file: str, password: str,
 
 def decrypt(input_file: str, out_dir: str, password: str, 
             keyfile_path: Optional[str] = None, **kwargs) -> str:
+    # LAZY LOAD: ChaCha20Poly1305 erst jetzt laden
+    ChaCha20Poly1305, _, _ = get_crypto_tools()
+
     tr_func = _get_tr_func(kwargs)
     enc = Path(input_file)
     if not enc.exists():
