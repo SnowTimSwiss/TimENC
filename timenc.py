@@ -11,19 +11,78 @@ import stat
 import errno
 from functools import partial
 import json
+import re
+import webbrowser
+
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
 
 # -------------------------------------------------------------------
 # Configuration Constants
 # -------------------------------------------------------------------
 
-APP_VERSION = "1.4.1" # speed optimized
+APP_VERSION = "1.0.0"
 ENCRYPTION_FORMAT_VERSION = 2
+
+# -------------------------------------------------------------------
+# UPDATE CHECKER LOGIC (NEU)
+# -------------------------------------------------------------------
+
+def get_latest_release_info() -> Tuple[Optional[str], Optional[str]]:
+    """
+    Prüft GitHub auf Updates. 
+    Ignoriert Versionen mit Buchstaben (Alpha/Beta/RC), außer dem 'v' Prefix.
+    Gibt (version, url) zurück oder (None, None) bei Fehler/kein Update.
+    """
+    if not REQUESTS_AVAILABLE:
+        return None, None
+
+    REPO_SLUG = "SnowTimSwiss/TimENC" 
+    URL = f"https://api.github.com/repos/{REPO_SLUG}/releases"
+
+    try:
+        # Kurzes Timeout, damit die App nicht hängt
+        response = requests.get(URL, timeout=3)
+        
+        if response.status_code != 200:
+            return None, None
+            
+        releases = response.json()
+        
+        # Falls keine Releases da sind oder Format falsch
+        if not releases or not isinstance(releases, list):
+            return None, None
+
+        # Wir prüfen die Releases (das erste in der Liste ist meist das neueste)
+        for release in releases:
+            tag_name = release.get("tag_name", "")
+            html_url = release.get("html_url", "")
+            
+            if not tag_name:
+                continue
+
+            # Tag bereinigen: 'v1.4.2' -> '1.4.2'
+            clean_version = tag_name.lstrip('v')
+
+            # Regex Prüfung: Erlaubt nur Zahlen und Punkte.
+            # Wenn "beta", "alpha", "test" drin vorkommt, matcht das NICHT.
+            # Matcht: "1.4.2", "2.0", "0.9.1.5"
+            # Matcht NICHT: "1.4.2-beta", "alpha1"
+            if re.fullmatch(r"^(\d+\.)*\d+$", clean_version):
+                return clean_version, html_url
+                
+    except Exception:
+        # Bei JEDEM Fehler (Kein Internet, API down, etc.) -> Still sein.
+        return None, None
+
+    return None, None
 
 # -------------------------------------------------------------------
 # LAZY IMPORT HELPERS
 # -------------------------------------------------------------------
-# Wir verschieben die schweren Krypto-Imports hierhin, 
-# damit die GUI sofort startet.
 def get_crypto_tools():
     from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
     from argon2.low_level import hash_secret_raw, Type
@@ -145,6 +204,11 @@ LANGUAGES = {
         'message_shortcut_conflict': "Tastenkombination wird bereits verwendet für: {action}",
         'message_shortcut_reset': "Alle Tastenkombinationen wurden zurückgesetzt",
         'message_shortcut_applied': "Tastenkombinationen wurden übernommen",
+        # NEU FÜR UPDATE
+        'update_available_title': "Update verfügbar!",
+        'update_available_msg': "Heyy, du bist nicht mehr auf der neusen version, hier kannst du die neue herunterladen.\n\nNeue Version: {version}",
+        'button_download': "Herunterladen",
+        'button_later': "Später",
     },
     'en': {
         'app_title': "Timenc {version} - Secure Encryption",
@@ -236,6 +300,11 @@ LANGUAGES = {
         'message_shortcut_conflict': "Shortcut already used for: {action}",
         'message_shortcut_reset': "All shortcuts have been reset to defaults",
         'message_shortcut_applied': "Shortcuts have been applied",
+        # NEW FOR UPDATE
+        'update_available_title': "Update available!",
+        'update_available_msg': "Heyy, you are no longer on the latest version, you can download the new one here.\n\nNew Version: {version}",
+        'button_download': "Download",
+        'button_later': "Later",
     }
 }
 
@@ -1517,6 +1586,34 @@ class TimencApp(QMainWindow):
                 self.dec_input.setText(file_to_open)
                 self._autosuggest_decrypt_output()
                 self._navigate(1, self.nav_decrypt_btn)
+
+        # CHECK FOR UPDATES (Timer starts after 3 seconds to not block UI load)
+        QTimer.singleShot(3000, self._check_updates_silently)
+
+    def _check_updates_silently(self):
+        """Checks for updates without blocking main thread excessively or showing errors."""
+        try:
+            latest_v, url = get_latest_release_info()
+            if latest_v and latest_v != APP_VERSION:
+                self._show_update_dialog(latest_v, url)
+        except Exception:
+            pass
+
+    def _show_update_dialog(self, version, url):
+        """Shows the popup for a found update."""
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(self.lang_manager.tr('update_available_title'))
+        msg_box.setText(self.lang_manager.tr('update_available_msg', version=version))
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        
+        # Buttons
+        btn_download = msg_box.addButton(self.lang_manager.tr('button_download'), QMessageBox.ButtonRole.AcceptRole)
+        msg_box.addButton(self.lang_manager.tr('button_later'), QMessageBox.ButtonRole.RejectRole)
+        
+        msg_box.exec()
+        
+        if msg_box.clickedButton() == btn_download:
+            webbrowser.open(url)
 
     def _setup_shortcuts(self):
         """Setup keyboard shortcuts from shortcut manager."""
