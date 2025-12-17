@@ -115,7 +115,7 @@ except ImportError:
 
 LANGUAGES = {
     'de': {
-        'app_title': "Timenc {version} - Sichere Verschlüsselung",
+        'app_title': "TimENC {version} - Sichere Verschlüsselung",
         'app_subtitle': "Sichere Dateiverschlüsselung mit Passwort und Keyfile",
         'status_ready': "✅ Bereit — {version}",
         'status_processing': "⏳ Verarbeite...",
@@ -211,7 +211,7 @@ LANGUAGES = {
         'button_later': "Später",
     },
     'en': {
-        'app_title': "Timenc {version} - Secure Encryption",
+        'app_title': "TimENC {version} - Secure Encryption",
         'app_subtitle': "Secure file encryption with password and keyfile",
         'status_ready': "✅ Ready — {version}",
         'status_processing': "⏳ Processing...",
