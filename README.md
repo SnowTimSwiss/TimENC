@@ -82,7 +82,7 @@ These parameters can be adjusted to increase or decrease computational cost base
 **Conditions:**
 
 * Any redistributed or modified version must also be licensed under GPL‑3.0
-* The *ource code must remain available
+* The Source code must remain available
 * Changes must be clearly documented
 
 This ensures TimENC stays free, open, and transparent forever, and that improvements benefit everyone.
