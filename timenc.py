@@ -1462,8 +1462,8 @@ class ShortcutsDialog(QDialog):
             action_item.setFlags(action_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 0, action_item)
             
-            # Current shortcut
-            current_shortcut = self.current_shortcuts.get(internal_key, "")
+            # Current shortcut - FIX: Use display_key to access the dictionary
+            current_shortcut = self.current_shortcuts.get(display_key, "")
             current_item = QTableWidgetItem(current_shortcut)
             current_item.setFlags(current_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 1, current_item)
