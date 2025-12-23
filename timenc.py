@@ -24,7 +24,7 @@ except ImportError:
 # Configuration Constants
 # -------------------------------------------------------------------
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 ENCRYPTION_FORMAT_VERSION = 2
 
 # -------------------------------------------------------------------
@@ -41,7 +41,7 @@ def get_latest_release_info() -> Tuple[Optional[str], Optional[str]]:
         return None, None
 
     REPO_SLUG = "SnowTimSwiss/TimENC" 
-    URL = f"https://api.github.com/repos/{REPO_SLUG}/releases"
+    URL = f"https://api.github.com/repos/ {REPO_SLUG}/releases"
 
     try:
         # Kurzes Timeout, damit die App nicht hängt
@@ -96,7 +96,7 @@ try:
         QProgressBar, QGraphicsOpacityEffect, QDialog, QListWidget,
         QListWidgetItem, QGroupBox, QGridLayout, QKeySequenceEdit,
         QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-        QDialogButtonBox
+        QDialogButtonBox, QScrollArea
     )
     from PySide6.QtCore import (
         QThread, QObject, Signal, Slot, Qt, QSettings, QSize,
@@ -1193,6 +1193,49 @@ QScrollBar::handle:horizontal:hover {
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     width: 0;
 }
+
+/* ===== NEW STYLES FOR SHORTCUTS TABLE ===== */
+QTableWidget#ShortcutsTable {
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    background-color: #0D1117;
+    gridline-color: #30363D;
+}
+
+QTableWidget#ShortcutsTable::item:hover {
+    background-color: rgba(88, 166, 255, 0.1);
+}
+
+QPushButton#ShortcutDialogButton {
+    min-width: 120px;
+    font-weight: 600;
+}
+
+/* ===== SHORTCUT DISPLAY LIST ===== */
+QListWidget#ShortcutDisplayList {
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    background-color: #0D1117;
+    padding: 4px;
+    max-height: 200px;
+}
+
+QListWidget#ShortcutDisplayList::item {
+    padding: 10px 15px;
+    border-bottom: 1px solid #21262D;
+}
+
+QListWidget#ShortcutDisplayList::item:last {
+    border-bottom: none;
+}
+
+QListWidget#ShortcutDisplayList::item:alternate {
+    background-color: #161B22;
+}
+
+QListWidget#ShortcutDisplayList::item:hover {
+    background-color: rgba(88, 166, 255, 0.1);
+}
 """
 
 
@@ -1313,12 +1356,26 @@ class ShortcutsDialog(QDialog):
         
     def init_ui(self):
         self.setWindowTitle(self.lang_manager.tr('shortcuts_dialog_title'))
-        self.setMinimumSize(700, 500)
+        self.setMinimumSize(750, 550)
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
         
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Create scrollable area for table
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        
+        # Create container for table
+        container_widget = QWidget()
+        container_layout = QVBoxLayout(container_widget)
+        container_layout.setContentsMargins(0, 0, 0, 0)
         
         # Create table for shortcuts
         self.table = QTableWidget()
+        self.table.setObjectName("ShortcutsTable")
         self.table.setColumnCount(3)
         self.table.setHorizontalHeaderLabels([
             self.lang_manager.tr('label_shortcut_action'),
@@ -1329,13 +1386,22 @@ class ShortcutsDialog(QDialog):
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(True)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         
-        layout.addWidget(self.table)
+        # Set column widths
+        self.table.setColumnWidth(0, 280)
+        self.table.setColumnWidth(1, 140)
         
+        container_layout.addWidget(self.table)
+        scroll_area.setWidget(container_widget)
+        layout.addWidget(scroll_area)
+
         # Button layout
         button_layout = QHBoxLayout()
         
         self.reset_button = QPushButton(self.lang_manager.tr('button_reset_shortcuts'))
+        self.reset_button.setObjectName("ShortcutDialogButton")
         self.reset_button.clicked.connect(self.reset_to_defaults)
         
         button_layout.addWidget(self.reset_button)
@@ -1364,15 +1430,15 @@ class ShortcutsDialog(QDialog):
     def load_current_shortcuts(self):
         """Load current shortcuts into the table."""
         shortcuts_mapping = {
-            'shortcut_encrypt_tab': self.lang_manager.tr('shortcut_encrypt_tab'),
-            'shortcut_decrypt_tab': self.lang_manager.tr('shortcut_decrypt_tab'),
-            'shortcut_settings_tab': self.lang_manager.tr('shortcut_settings_tab'),
-            'shortcut_open_file': self.lang_manager.tr('shortcut_open_file'),
-            'shortcut_save_as': self.lang_manager.tr('shortcut_save_as'),
-            'shortcut_quit': self.lang_manager.tr('shortcut_quit'),
-            'shortcut_show_help': self.lang_manager.tr('shortcut_show_help'),
-            'shortcut_reset_all': self.lang_manager.tr('shortcut_reset_all'),
-            'shortcut_apply': self.lang_manager.tr('shortcut_apply')
+            'encrypt_tab': self.lang_manager.tr('shortcut_encrypt_tab'),
+            'decrypt_tab': self.lang_manager.tr('shortcut_decrypt_tab'),
+            'settings_tab': self.lang_manager.tr('shortcut_settings_tab'),
+            'open_file': self.lang_manager.tr('shortcut_open_file'),
+            'save_as': self.lang_manager.tr('shortcut_save_as'),
+            'quit': self.lang_manager.tr('shortcut_quit'),
+            'show_help': self.lang_manager.tr('shortcut_show_help'),
+            'reset_all': self.lang_manager.tr('shortcut_reset_all'),
+            'apply': self.lang_manager.tr('shortcut_apply')
         }
         
         # Map internal keys to display names
@@ -1392,7 +1458,7 @@ class ShortcutsDialog(QDialog):
         
         for row, (internal_key, display_key) in enumerate(internal_to_display.items()):
             # Action name
-            action_item = QTableWidgetItem(shortcuts_mapping[display_key])
+            action_item = QTableWidgetItem(shortcuts_mapping[internal_key])
             action_item.setFlags(action_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 0, action_item)
             
@@ -1406,12 +1472,22 @@ class ShortcutsDialog(QDialog):
             shortcut_edit = QKeySequenceEdit()
             if current_shortcut:
                 shortcut_edit.setKeySequence(QKeySequence(current_shortcut))
+            shortcut_edit.keySequenceChanged.connect(lambda seq, r=row: self._on_shortcut_changed(r, seq))
+            shortcut_edit.clearButtonEnabled = True
             self.table.setCellWidget(row, 2, shortcut_edit)
             
             # Store internal key reference
             shortcut_edit.internal_key = internal_key
         
         self.table.resizeColumnsToContents()
+        
+    def _on_shortcut_changed(self, row, sequence):
+        """Handle shortcut changes."""
+        shortcut_edit = self.table.cellWidget(row, 2)
+        if shortcut_edit:
+            internal_key = getattr(shortcut_edit, 'internal_key', None)
+            if internal_key:
+                self.new_shortcuts[internal_key] = sequence.toString(QKeySequence.SequenceFormat.NativeText)
         
     def on_cell_changed(self, row, column):
         """Handle cell changes - not used directly since we use QKeySequenceEdit widgets."""
@@ -1421,10 +1497,9 @@ class ShortcutsDialog(QDialog):
         """Extract shortcuts from the table."""
         shortcuts = {}
         for row in range(self.table.rowCount()):
-            action_item = self.table.item(row, 0)
             shortcut_edit = self.table.cellWidget(row, 2)
             
-            if action_item and shortcut_edit:
+            if shortcut_edit:
                 internal_key = getattr(shortcut_edit, 'internal_key', None)
                 if internal_key:
                     key_sequence = shortcut_edit.keySequence()
@@ -1570,9 +1645,8 @@ class TimencApp(QMainWindow):
         self.dec_input.file_dropped.connect(self._autosuggest_decrypt_output)
         self.dec_input.textChanged.connect(self._autosuggest_decrypt_output)
         
-        # Password strength indicators
+        # Password strength indicators - ONLY for encryption
         self.enc_pwd.textChanged.connect(self._update_enc_password_strength)
-        self.dec_pwd.textChanged.connect(self._update_dec_password_strength)
 
         # Keyboard shortcuts
         self._setup_shortcuts()
@@ -1666,12 +1740,21 @@ class TimencApp(QMainWindow):
     
     def _shortcut_show_help(self):
         """Show help dialog."""
+        shortcuts_text = []
+        all_shortcuts = self.shortcut_manager.get_all_shortcuts()
+        
+        # Sort for consistent display
+        sorted_items = sorted(all_shortcuts.items())
+        
+        for key, shortcut in sorted_items:
+            if shortcut:
+                display_name = self.lang_manager.tr(key)  # FIX: Direkte Übersetzung
+                shortcuts_text.append(f"<b>{display_name}:</b> {shortcut}")
+        
         QMessageBox.information(
             self,
             "Keyboard Shortcuts",
-            "Current shortcuts:\n\n" +
-            "\n".join([f"{self.lang_manager.tr(key.replace('_', 'shortcut_'))}: {value}" 
-                      for key, value in self.shortcut_manager.get_all_shortcuts().items()])
+            "<br>".join(shortcuts_text)
         )
     
     def _shortcut_reset_all(self):
@@ -1877,10 +1960,7 @@ class TimencApp(QMainWindow):
         dec_output_layout.addWidget(dec_output_btn)
         container_layout.addRow(QLabel(self.lang_manager.tr('label_output_folder')), dec_output_layout)
 
-        # Password with strength indicator
-        pwd_container = QVBoxLayout()
-        pwd_container.setSpacing(8)
-        
+        # Password input - NO strength indicator for decryption
         self.dec_pwd = QLineEdit()
         self.dec_pwd.setEchoMode(QLineEdit.EchoMode.Password)
         self.dec_pwd_toggle_btn = QPushButton(self.lang_manager.tr('button_show'))
@@ -1891,22 +1971,7 @@ class TimencApp(QMainWindow):
         dec_pwd_layout = QHBoxLayout()
         dec_pwd_layout.addWidget(self.dec_pwd)
         dec_pwd_layout.addWidget(self.dec_pwd_toggle_btn)
-        pwd_container.addLayout(dec_pwd_layout)
-        
-        # Password strength bar
-        self.dec_pwd_strength_bar = QProgressBar()
-        self.dec_pwd_strength_bar.setObjectName("PasswordStrength")
-        self.dec_pwd_strength_bar.setTextVisible(False)
-        self.dec_pwd_strength_bar.setMaximum(100)
-        self.dec_pwd_strength_bar.setValue(0)
-        self.dec_pwd_strength_bar.setMaximumHeight(6)
-        pwd_container.addWidget(self.dec_pwd_strength_bar)
-        
-        self.dec_pwd_strength_label = QLabel("")
-        self.dec_pwd_strength_label.setObjectName("SubHeader")
-        pwd_container.addWidget(self.dec_pwd_strength_label)
-        
-        container_layout.addRow(QLabel(self.lang_manager.tr('label_password')), pwd_container)
+        container_layout.addRow(QLabel(self.lang_manager.tr('label_password')), dec_pwd_layout)
 
         # Keyfile
         self.dec_keyfile = DropLineEdit(self.lang_manager.tr('placeholder_drop_keyfile'))
@@ -1966,26 +2031,33 @@ class TimencApp(QMainWindow):
         # Shortcuts group
         shortcuts_group = QGroupBox(self.lang_manager.tr('settings_shortcuts'))
         shortcuts_layout = QVBoxLayout(shortcuts_group)
+        shortcuts_layout.setSpacing(12)
         
-        # Display current shortcuts
-        shortcuts_text = QLabel()
-        shortcuts_text.setWordWrap(True)
-        shortcuts_text.setTextFormat(Qt.TextFormat.RichText)
+        # Create scrollable list for current shortcuts
+        shortcuts_scroll = QScrollArea()
+        shortcuts_scroll.setWidgetResizable(True)
+        shortcuts_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        shortcuts_scroll.setMaximumHeight(200)
         
-        # Get current shortcuts and format them nicely
-        shortcuts_list = []
-        all_shortcuts = self.shortcut_manager.get_all_shortcuts()
+        # Shortcut list container
+        shortcut_container = QWidget()
+        shortcut_container_layout = QVBoxLayout(shortcut_container)
+        shortcut_container_layout.setContentsMargins(0, 0, 0, 0)
         
-        for key, shortcut in all_shortcuts.items():
-            if shortcut:  # Only show if shortcut is set
-                display_name = self.lang_manager.tr(key.replace('_', 'shortcut_'))
-                shortcuts_list.append(f"<b>{display_name}:</b> {shortcut}")
+        # Display current shortcuts in a modern list view
+        self.shortcuts_list_widget = QListWidget()
+        self.shortcuts_list_widget.setObjectName("ShortcutDisplayList")
+        self.shortcuts_list_widget.setAlternatingRowColors(True)
+        self.shortcuts_list_widget.setFrameShape(QFrame.Shape.NoFrame)
+        self._refresh_shortcuts_display()
         
-        shortcuts_text.setText("<br>".join(shortcuts_list))
-        shortcuts_layout.addWidget(shortcuts_text)
+        shortcut_container_layout.addWidget(self.shortcuts_list_widget)
+        shortcuts_scroll.setWidget(shortcut_container)
+        shortcuts_layout.addWidget(shortcuts_scroll)
         
         # Customize button
         self.customize_shortcuts_btn = QPushButton(self.lang_manager.tr('button_customize_shortcuts'))
+        self.customize_shortcuts_btn.setObjectName("ShortcutDialogButton")
         self.customize_shortcuts_btn.clicked.connect(self._show_shortcuts_dialog)
         shortcuts_layout.addWidget(self.customize_shortcuts_btn)
         
@@ -1994,12 +2066,31 @@ class TimencApp(QMainWindow):
         layout.addWidget(container)
         layout.addStretch()
 
+    def _refresh_shortcuts_display(self):
+        """Refresh the shortcuts list display in settings."""
+        self.shortcuts_list_widget.clear()
+        all_shortcuts = self.shortcut_manager.get_all_shortcuts()
+        
+        # Sort for consistent display
+        sorted_items = sorted(all_shortcuts.items())
+        
+        for key, shortcut in sorted_items:
+            if shortcut:  # Only show if shortcut is set
+                display_name = self.lang_manager.tr(key)  # FIX: Direkte Übersetzung
+                # Format with arrow separator
+                item_text = f"{display_name} → {shortcut}"
+                item = QListWidgetItem(item_text)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+                self.shortcuts_list_widget.addItem(item)
+
     def _show_shortcuts_dialog(self):
         """Show the shortcuts customization dialog."""
         dialog = ShortcutsDialog(self.shortcut_manager, self.lang_manager, self)
         if dialog.exec():
             # Re-setup shortcuts after changes
             self._setup_shortcuts()
+            # Refresh the display in settings
+            self._refresh_shortcuts_display()
 
     def _on_language_change(self, index: int):
         lang_code = self.lang_combo.itemData(index)
@@ -2027,29 +2118,6 @@ class TimencApp(QMainWindow):
             self.enc_pwd_strength_label.setText("")
         
         self.enc_pwd_strength_bar.setStyle(self.enc_pwd_strength_bar.style())
-
-    def _update_dec_password_strength(self):
-        password = self.dec_pwd.text()
-        strength, label = check_password_strength(password)
-        
-        self.dec_pwd_strength_bar.setValue(strength)
-        
-        if label == "weak":
-            self.dec_pwd_strength_bar.setObjectName("WeakPassword")
-            self.dec_pwd_strength_label.setText(f"🔴 {self.lang_manager.tr('pwd_strength_weak')}")
-        elif label == "medium":
-            self.dec_pwd_strength_bar.setObjectName("MediumPassword")
-            self.dec_pwd_strength_label.setText(f"🟡 {self.lang_manager.tr('pwd_strength_medium')}")
-        elif label == "strong":
-            self.dec_pwd_strength_bar.setObjectName("StrongPassword")
-            self.dec_pwd_strength_label.setText(f"🟢 {self.lang_manager.tr('pwd_strength_strong')}")
-        elif label == "very_strong":
-            self.dec_pwd_strength_bar.setObjectName("VeryStrongPassword")
-            self.dec_pwd_strength_label.setText(f"🟢 {self.lang_manager.tr('pwd_strength_very_strong')}")
-        else:
-            self.dec_pwd_strength_label.setText("")
-        
-        self.dec_pwd_strength_bar.setStyle(self.dec_pwd_strength_bar.style())
 
     def _choose_encrypt_input(self):
         path, _ = QFileDialog.getOpenFileName(self, self.lang_manager.tr('dialog_choose_enc_input_file'))
