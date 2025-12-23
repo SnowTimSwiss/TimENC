@@ -31,6 +31,11 @@ ENCRYPTION_FORMAT_VERSION = 2
 # UPDATE CHECKER LOGIC (NEU)
 # -------------------------------------------------------------------
 
+def _parse_version(version_str: str) -> tuple[int, ...]:
+    """Konvertiere Versions-String in Tuple für korrekten Vergleich (1.10.0 > 1.2.0)."""
+    return tuple(map(int, version_str.split('.')))
+
+
 def get_latest_release_info() -> Tuple[Optional[str], Optional[str]]:
     """
     Prüft GitHub auf Updates. 
@@ -41,7 +46,7 @@ def get_latest_release_info() -> Tuple[Optional[str], Optional[str]]:
         return None, None
 
     REPO_SLUG = "SnowTimSwiss/TimENC" 
-    URL = f"https://api.github.com/repos/ {REPO_SLUG}/releases"
+    URL = f"https://api.github.com/repos/{REPO_SLUG}/releases"  # FIX: Doppeltes Leerzeichen entfernt
 
     try:
         # Kurzes Timeout, damit die App nicht hängt
@@ -1668,7 +1673,8 @@ class TimencApp(QMainWindow):
         """Checks for updates without blocking main thread excessively or showing errors."""
         try:
             latest_v, url = get_latest_release_info()
-            if latest_v and latest_v != APP_VERSION:
+            # FIX: Semantischer Versionsvergleich statt Stringvergleich
+            if latest_v and _parse_version(latest_v) > _parse_version(APP_VERSION):
                 self._show_update_dialog(latest_v, url)
         except Exception:
             pass
