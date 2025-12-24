@@ -13,7 +13,7 @@ from functools import partial
 import json
 import re
 import webbrowser
-import shutil # Für effizientes Verschieben von Dateien
+import shutil
 
 try:
     import requests
@@ -26,12 +26,12 @@ except ImportError:
 # -------------------------------------------------------------------
 
 APP_VERSION = "1.2.0"
-# Wir erhöhen auf 3, da Streaming eine Strukturänderung erfordert
+
 ENCRYPTION_FORMAT_VERSION = 3 
 
 # Streaming Konfiguration
-CHUNK_SIZE = 64 * 1024  # 64 KB Blöcke für RAM-Schonung
-TAG_SIZE = 16           # Poly1305 Tag Größe (fest bei ChaCha20Poly1305)
+CHUNK_SIZE = 64 * 1024
+TAG_SIZE = 16
 
 # -------------------------------------------------------------------
 # UPDATE CHECKER LOGIC
@@ -53,7 +53,6 @@ def get_latest_release_info() -> Tuple[Optional[str], Optional[str]]:
     URL = f"https://api.github.com/repos/{REPO_SLUG}/releases"
 
     try:
-        # Kurzes Timeout, damit die App nicht hängt
         response = requests.get(URL, timeout=3)
         
         if response.status_code != 200:
@@ -61,11 +60,9 @@ def get_latest_release_info() -> Tuple[Optional[str], Optional[str]]:
             
         releases = response.json()
         
-        # Falls keine Releases da sind oder Format falsch
         if not releases or not isinstance(releases, list):
             return None, None
 
-        # Wir prüfen die Releases (das erste in der Liste ist meist das neueste)
         for release in releases:
             tag_name = release.get("tag_name", "")
             html_url = release.get("html_url", "")
@@ -73,7 +70,6 @@ def get_latest_release_info() -> Tuple[Optional[str], Optional[str]]:
             if not tag_name:
                 continue
 
-            # Tag bereinigen: 'v1.4.2' -> '1.4.2'
             clean_version = tag_name.lstrip('v')
 
             if re.fullmatch(r"^(\d+\.)*\d+$", clean_version):
@@ -87,6 +83,7 @@ def get_latest_release_info() -> Tuple[Optional[str], Optional[str]]:
 # -------------------------------------------------------------------
 # LAZY IMPORT HELPERS
 # -------------------------------------------------------------------
+
 def get_crypto_tools():
     from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
     from argon2.low_level import hash_secret_raw, Type
