@@ -13,6 +13,7 @@ from functools import partial
 import json
 import re
 import webbrowser
+import shutil # Für effizientes Verschieben von Dateien
 
 try:
     import requests
@@ -24,11 +25,16 @@ except ImportError:
 # Configuration Constants
 # -------------------------------------------------------------------
 
-APP_VERSION = "1.1.0"
-ENCRYPTION_FORMAT_VERSION = 2
+APP_VERSION = "1.2.0"
+# Wir erhöhen auf 3, da Streaming eine Strukturänderung erfordert
+ENCRYPTION_FORMAT_VERSION = 3 
+
+# Streaming Konfiguration
+CHUNK_SIZE = 64 * 1024  # 64 KB Blöcke für RAM-Schonung
+TAG_SIZE = 16           # Poly1305 Tag Größe (fest bei ChaCha20Poly1305)
 
 # -------------------------------------------------------------------
-# UPDATE CHECKER LOGIC (NEU)
+# UPDATE CHECKER LOGIC
 # -------------------------------------------------------------------
 
 def _parse_version(version_str: str) -> tuple[int, ...]:
@@ -39,14 +45,12 @@ def _parse_version(version_str: str) -> tuple[int, ...]:
 def get_latest_release_info() -> Tuple[Optional[str], Optional[str]]:
     """
     Prüft GitHub auf Updates. 
-    Ignoriert Versionen mit Buchstaben (Alpha/Beta/RC), außer dem 'v' Prefix.
-    Gibt (version, url) zurück oder (None, None) bei Fehler/kein Update.
     """
     if not REQUESTS_AVAILABLE:
         return None, None
 
     REPO_SLUG = "SnowTimSwiss/TimENC" 
-    URL = f"https://api.github.com/repos/{REPO_SLUG}/releases"  # FIX: Doppeltes Leerzeichen entfernt
+    URL = f"https://api.github.com/repos/{REPO_SLUG}/releases"
 
     try:
         # Kurzes Timeout, damit die App nicht hängt
@@ -72,15 +76,10 @@ def get_latest_release_info() -> Tuple[Optional[str], Optional[str]]:
             # Tag bereinigen: 'v1.4.2' -> '1.4.2'
             clean_version = tag_name.lstrip('v')
 
-            # Regex Prüfung: Erlaubt nur Zahlen und Punkte.
-            # Wenn "beta", "alpha", "test" drin vorkommt, matcht das NICHT.
-            # Matcht: "1.4.2", "2.0", "0.9.1.5"
-            # Matcht NICHT: "1.4.2-beta", "alpha1"
             if re.fullmatch(r"^(\d+\.)*\d+$", clean_version):
                 return clean_version, html_url
                 
     except Exception:
-        # Bei JEDEM Fehler (Kein Internet, API down, etc.) -> Still sein.
         return None, None
 
     return None, None
@@ -209,7 +208,6 @@ LANGUAGES = {
         'message_shortcut_conflict': "Tastenkombination wird bereits verwendet für: {action}",
         'message_shortcut_reset': "Alle Tastenkombinationen wurden zurückgesetzt",
         'message_shortcut_applied': "Tastenkombinationen wurden übernommen",
-        # NEU FÜR UPDATE
         'update_available_title': "Update verfügbar!",
         'update_available_msg': "Heyy, du bist nicht mehr auf der neusen version, hier kannst du die neue herunterladen.\n\nNeue Version: {version}",
         'button_download': "Herunterladen",
@@ -305,7 +303,6 @@ LANGUAGES = {
         'message_shortcut_conflict': "Shortcut already used for: {action}",
         'message_shortcut_reset': "All shortcuts have been reset to defaults",
         'message_shortcut_applied': "Shortcuts have been applied",
-        # NEW FOR UPDATE
         'update_available_title': "Update available!",
         'update_available_msg': "Heyy, you are no longer on the latest version, you can download the new one here.\n\nNew Version: {version}",
         'button_download': "Download",
@@ -456,73 +453,31 @@ def _unpack_u32(b: bytes) -> int:
     return struct.unpack(">I", b)[0]
 
 
-def atomic_write_bytes(final_path: Path, data: bytes, mode: int = 0o600, **kwargs) -> None:
-    tr_func = _get_tr_func(kwargs)
-    final_dir = final_path.parent
-    final_dir.mkdir(parents=True, exist_ok=True)
-    if final_path.exists():
-        raise FileExistsError(tr_func('err_file_exists', path=str(final_path)))
-    
-    fd, tmp = tempfile.mkstemp(dir=str(final_dir))
+def secure_delete(path: Path):
+    """
+    Überschreibt eine Datei mit Nullen vor dem Löschen.
+    """
     try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(data)
-            f.flush()
-            os.fsync(f.fileno())
-        os.chmod(tmp, mode)
-        os.replace(tmp, str(final_path))
-    finally:
-        try:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-        except Exception:
-            pass
-
-
-def atomic_write_bytes_allow_overwrite(final_path: Path, data: bytes, mode: int = 0o600) -> None:
-    final_dir = final_path.parent
-    final_dir.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(final_dir))
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(data)
-            f.flush()
-            os.fsync(f.fileno())
-        os.chmod(tmp, mode)
-        os.replace(tmp, str(final_path))
-    finally:
-        try:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-        except Exception:
-            pass
-
-
-def atomic_write_fileobj(final_path: Path, fileobj, mode: int = 0o600) -> None:
-    final_dir = final_path.parent
-    final_dir.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(final_dir))
-    try:
-        with os.fdopen(fd, "wb") as f:
-            fileobj.seek(0)
-            while True:
-                chunk = fileobj.read(65536)
-                if not chunk:
-                    break
-                f.write(chunk)
-            f.flush()
-            os.fsync(f.fileno())
-        os.chmod(tmp, mode)
-        os.replace(tmp, str(final_path))
-    finally:
-        try:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-        except Exception:
-            pass
-
+        if path.exists():
+            length = path.stat().st_size
+            with open(path, "wb") as f:
+                # In Blöcken überschreiben um RAM zu sparen bei großen Temp-Dateien
+                remaining = length
+                block_size = 65536
+                zeros = b'\0' * block_size
+                while remaining > 0:
+                    towrite = min(block_size, remaining)
+                    f.write(zeros[:towrite])
+                    remaining -= towrite
+            path.unlink()
+    except Exception:
+        pass # Best effort
 
 def _make_tar_if_needed(path: Path) -> Tuple[Path, bool]:
+    """
+    Erstellt ein Tar-Archiv, wenn der Input ein Ordner ist.
+    Gibt (Pfad_zur_Datei, Ist_Temporär) zurück.
+    """
     if path.is_file():
         return path, False
         
@@ -533,7 +488,8 @@ def _make_tar_if_needed(path: Path) -> Tuple[Path, bool]:
             tar.add(str(path), arcname=path.name, recursive=True)
     except Exception:
         try:
-            os.remove(str(tmp))
+            if tmp.exists(): secure_delete(tmp)
+            if final_dir.exists(): shutil.rmtree(str(final_dir))
         except Exception:
             pass
         raise
@@ -549,7 +505,7 @@ def _is_within_directory(directory: str, target: str) -> bool:
         return False
 
 
-def safe_extract(tar: tarfile.TarFile, path: str = ".", **kwargs) -> None:
+def safe_extract(tar: tarfile.TarFile, path: str, **kwargs) -> None:
     tr_func = _get_tr_func(kwargs)
     for member in tar.getmembers():
         member_path = os.path.join(path, member.name)
@@ -557,34 +513,15 @@ def safe_extract(tar: tarfile.TarFile, path: str = ".", **kwargs) -> None:
             raise Exception(tr_func('err_path_traversal'))
     tar.extractall(path=path)
 
-
-def secure_delete(path: Path):
-    try:
-        length = path.stat().st_size
-        with open(path, "r+b") as f:
-            f.seek(0)
-            remaining = length
-            block = 65536
-            while remaining > 0:
-                towrite = os.urandom(min(block, remaining))
-                f.write(towrite)
-                remaining -= len(towrite)
-            f.flush()
-            os.fsync(f.fileno())
-    except Exception:
-        pass
-    try:
-        path.unlink()
-    except Exception:
-        pass
-
+# ==============================================================================
+# STREAMING ENCRYPTION LOGIC (V3)
+# ==============================================================================
 
 def encrypt(input_path: str, output_file: str, password: str, 
             keyfile_path: Optional[str] = None, **kwargs) -> str:
-    # LAZY LOAD: ChaCha20Poly1305 erst jetzt laden
     ChaCha20Poly1305, _, _ = get_crypto_tools()
-    
     tr_func = _get_tr_func(kwargs)
+    
     inp = Path(input_path)
     if not inp.exists():
         raise FileNotFoundError(tr_func('err_input_not_found', path=input_path))
@@ -593,170 +530,205 @@ def encrypt(input_path: str, output_file: str, password: str,
     original_name = file_to_encrypt.name
     is_dir = 1 if tmp_created else 0
     
+    key_ba = bytearray()
+    
     try:
-        data = file_to_encrypt.read_bytes()
         salt = os.urandom(SALT_SIZE)
-        keyfile_bytes = None
-        if keyfile_path:
-            keyfile_bytes = Path(keyfile_path).read_bytes()
-            
-        key = derive_key(password.encode("utf-8"), salt, ARGON2_TIME, 
-                         ARGON2_MEMORY_KIB, ARGON2_PARALLELISM, keyfile_bytes)
+        keyfile_bytes = Path(keyfile_path).read_bytes() if keyfile_path else None
         
+        key = derive_key(
+            password.encode("utf-8"), salt,
+            ARGON2_TIME, ARGON2_MEMORY_KIB, ARGON2_PARALLELISM,
+            keyfile_bytes
+        )
         key_ba = bytearray(key)
-        nonce = os.urandom(NONCE_SIZE)
+        
+        # Base nonce (wird in V3 pro Chunk hochgezählt)
+        base_nonce = os.urandom(NONCE_SIZE)
 
-        header = bytearray()
-        header += MAGIC
-        header += bytes([VERSION])
-        header += bytes([is_dir])
+        # Header Konstruktion
         name_bytes = original_name.encode("utf-8")
         if len(name_bytes) > 65535:
             raise ValueError(tr_func('err_filename_too_long'))
+        
+        header = bytearray()
+        header += MAGIC
+        header += bytes([VERSION]) # V3
+        header += bytes([is_dir])
         header += _pack_u16(len(name_bytes))
         header += name_bytes
         header += salt
         header += _pack_u32(ARGON2_TIME)
         header += _pack_u32(ARGON2_MEMORY_KIB)
         header += bytes([ARGON2_PARALLELISM])
-        header += nonce
+        header += base_nonce
 
-        try:
-            aead = ChaCha20Poly1305(bytes(key_ba))
-            ciphertext = aead.encrypt(nonce, data, bytes(header))
-        finally:
-            for i in range(len(key_ba)):
-                key_ba[i] = 0
-            del key_ba
+        # AEAD Setup
+        aead = ChaCha20Poly1305(bytes(key_ba))
+        
+        # Konvertiere base_nonce in int zum Inkrementieren
+        nonce_int = int.from_bytes(base_nonce, 'big')
 
-        final_bytes = bytes(header) + ciphertext
-
-        outp = Path(output_file)
-        atomic_write_bytes(outp, final_bytes, mode=0o600, tr_func=tr_func)
+        # Streaming Loop
+        with open(file_to_encrypt, "rb") as f_in, open(output_file, "wb") as f_out:
+            # 1. Header schreiben
+            f_out.write(header)
+            
+            # 2. Chunk-Verschlüsselung
+            chunk_counter = 0
+            while True:
+                chunk = f_in.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                
+                # Berechne Nonce für diesen Chunk: Base + Counter
+                current_nonce_int = nonce_int + chunk_counter
+                # Überlauf verhindern (wrap around bei 96 bit)
+                current_nonce_int %= (2**96) 
+                current_nonce = current_nonce_int.to_bytes(NONCE_SIZE, 'big')
+                
+                # Chunk verschlüsseln (Kein AAD für Chunks hier, Kontext ist durch Key/Nonce gegeben)
+                ciphertext = aead.encrypt(current_nonce, chunk, None)
+                
+                f_out.write(ciphertext)
+                chunk_counter += 1
+            
         return tr_func('ok_encrypted', path=output_file)
         
     finally:
+        # Speicher bereinigen
+        for i in range(len(key_ba)):
+            key_ba[i] = 0
         if tmp_created:
-            try:
-                secure_delete(file_to_encrypt)
-            except Exception:
-                pass
-        try:
-            if 'data' in locals():
-                if isinstance(data, bytes):
-                    ba = bytearray(data)
-                    for i in range(len(ba)):
-                        ba[i] = 0
-                    del ba
-                else:
-                    del data
-        except Exception:
-            pass
+            secure_delete(file_to_encrypt)
+            # Auch temporäres Verzeichnis löschen falls vorhanden
+            if file_to_encrypt.parent.name.startswith("tmp"):
+                try: shutil.rmtree(str(file_to_encrypt.parent))
+                except: pass
 
+# ==============================================================================
+# STREAMING DECRYPTION LOGIC (V2 & V3 COMPATIBLE)
+# ==============================================================================
 
 def decrypt(input_file: str, out_dir: str, password: str, 
             keyfile_path: Optional[str] = None, **kwargs) -> str:
-    # LAZY LOAD: ChaCha20Poly1305 erst jetzt laden
     ChaCha20Poly1305, _, _ = get_crypto_tools()
-
     tr_func = _get_tr_func(kwargs)
+    
     enc = Path(input_file)
     if not enc.exists():
         raise FileNotFoundError(tr_func('err_input_file_not_found', path=input_file))
-        
-    data = enc.read_bytes()
-    pos = 0
-    
-    if data[: len(MAGIC)] != MAGIC:
-        raise ValueError(tr_func('err_not_timenc_file'))
-    
-    pos += len(MAGIC)
-    version = data[pos]; pos += 1
-    original_name = None
-    is_dir = 0
-    
-    if version >= 2:
-        is_dir = data[pos]; pos += 1
-        name_len = _unpack_u16(data[pos:pos+2]); pos += 2
-        original_name = data[pos:pos+name_len].decode("utf-8"); pos += name_len
-        
-    salt = data[pos : pos + SALT_SIZE]; pos += SALT_SIZE
-    time_cost = _unpack_u32(data[pos : pos + 4]); pos += 4
-    memory_kib = _unpack_u32(data[pos : pos + 4]); pos += 4
-    parallelism = data[pos]; pos += 1
-    nonce = data[pos : pos + NONCE_SIZE]; pos += NONCE_SIZE
 
-    header_bytes = data[:pos]
-    ciphertext = data[pos:]
+    key_ba = bytearray()
     
-    keyfile_bytes = None
-    if keyfile_path:
-        keyfile_bytes = Path(keyfile_path).read_bytes()
+    # 1. Header Informationen lesen
+    with open(enc, "rb") as f_in:
+        magic = f_in.read(len(MAGIC))
+        if magic != MAGIC:
+            raise ValueError(tr_func('err_not_timenc_file'))
+        
+        version = ord(f_in.read(1))
+        is_dir = ord(f_in.read(1))
+        name_len = _unpack_u16(f_in.read(2))
+        original_name = f_in.read(name_len).decode("utf-8")
+        salt = f_in.read(SALT_SIZE)
+        time_cost = _unpack_u32(f_in.read(4))
+        memory_kib = _unpack_u32(f_in.read(4))
+        parallelism = ord(f_in.read(1))
+        nonce = f_in.read(NONCE_SIZE)
+        
+        header_end_pos = f_in.tell()
 
-    key = derive_key(password.encode("utf-8"), salt, time_cost, memory_kib, parallelism, keyfile_bytes)
-    key_ba = bytearray(key)
-    
-    try:
+        # Schlüssel ableiten
+        keyfile_bytes = Path(keyfile_path).read_bytes() if keyfile_path else None
+        key = derive_key(password.encode("utf-8"), salt, time_cost, memory_kib, parallelism, keyfile_bytes)
+        key_ba = bytearray(key)
         aead = ChaCha20Poly1305(bytes(key_ba))
+        
+        # Temporäre Datei für entschlüsselte Daten
+        fd, tmp_name = tempfile.mkstemp()
+        os.close(fd)
+        tmp_path = Path(tmp_name)
+            
         try:
-            plaintext = aead.decrypt(nonce, ciphertext, bytes(header_bytes))
-        except Exception:
-            raise ValueError(tr_func('err_decrypt_failed'))
-    finally:
-        for i in range(len(key_ba)):
-            key_ba[i] = 0
-        del key_ba
+            # --- LEGACY V2 SUPPORT (Alles in RAM laden) ---
+            if version == 2:
+                f_in.seek(0)
+                header_len = header_end_pos
+                header_bytes = f_in.read(header_len)
+                ciphertext = f_in.read()
+                
+                try:
+                    plaintext = aead.decrypt(nonce, ciphertext, header_bytes)
+                    with open(tmp_path, "wb") as f_tmp:
+                        f_tmp.write(plaintext)
+                    # RAM säubern
+                    del plaintext
+                except Exception:
+                    raise ValueError(tr_func('err_decrypt_failed'))
 
+            # --- V3 SUPPORT (Streaming) ---
+            elif version == 3:
+                nonce_int = int.from_bytes(nonce, 'big')
+                chunk_counter = 0
+                
+                # Verschlüsselte Chunk Größe = Plaintext Chunk + Tag Size (16 bytes für Poly1305)
+                enc_chunk_size = CHUNK_SIZE + TAG_SIZE
+                
+                with open(tmp_path, "wb") as f_tmp:
+                    while True:
+                        # Verschlüsselten Chunk lesen
+                        chunk_data = f_in.read(enc_chunk_size)
+                        if not chunk_data:
+                            break
+                            
+                        current_nonce_int = nonce_int + chunk_counter
+                        current_nonce_int %= (2**96)
+                        current_nonce = current_nonce_int.to_bytes(NONCE_SIZE, 'big')
+                        
+                        try:
+                            # Chunk entschlüsseln
+                            plaintext_chunk = aead.decrypt(current_nonce, chunk_data, None)
+                            f_tmp.write(plaintext_chunk)
+                        except Exception:
+                            raise ValueError(tr_func('err_decrypt_failed'))
+                        
+                        chunk_counter += 1
+            else:
+                 raise ValueError(f"Unsupported version: {version}")
+
+        except Exception as e:
+            # Aufräumen bei Fehler
+            secure_delete(tmp_path)
+            raise e
+            
+    # Key aus RAM löschen
+    for i in range(len(key_ba)):
+        key_ba[i] = 0
+
+    # Finalisierung: Extrahieren oder Verschieben
     outp = Path(out_dir)
     outp.mkdir(parents=True, exist_ok=True)
-
-    fd, tmp = tempfile.mkstemp()
-    os.close(fd)
-    tmp_path = Path(tmp)
     
     try:
-        tmp_path.write_bytes(plaintext)
-        try:
-            if isinstance(plaintext, bytes):
-                ba = bytearray(plaintext)
-                for i in range(len(ba)):
-                    ba[i] = 0
-                del ba
-        except Exception:
-            pass
-
-        if version >= 2 and is_dir == 1:
-            with tarfile.open(str(tmp_path), "r") as tar:
+        if is_dir == 1:
+            with tarfile.open(tmp_path, "r") as tar:
                 safe_extract(tar, str(outp), tr_func=tr_func)
-            return tr_func('ok_decrypted_extracted', path=str(outp))
-            
-        elif version >= 2 and original_name:
-            target = outp / original_name
-            if target.exists():
-                raise FileExistsError(tr_func('err_file_exists', path=str(target)))
-            atomic_write_bytes(target, tmp_path.read_bytes(), mode=0o600, tr_func=tr_func)
-            return tr_func('ok_decrypted', path=str(target))
-            
-        else:
-            try:
-                if tarfile.is_tarfile(str(tmp_path)):
-                    with tarfile.open(str(tmp_path), "r") as tar:
-                        safe_extract(tar, str(outp), tr_func=tr_func)
-                    return tr_func('ok_decrypted_extracted', path=str(outp))
-            except Exception:
-                pass
-            
-            target = outp / "decrypted"
-            if target.exists():
-                raise FileExistsError(tr_func('err_file_exists', path=str(target)))
-            atomic_write_bytes(target, tmp_path.read_bytes(), mode=0o600, tr_func=tr_func)
-            return tr_func('ok_decrypted', path=str(target))
-            
-    finally:
-        try:
             secure_delete(tmp_path)
-        except Exception:
-            pass
+            return tr_func('ok_decrypted_extracted', path=str(outp))
+        else:
+            target = outp / (original_name or "decrypted_file")
+            if target.exists():
+                secure_delete(tmp_path)
+                raise FileExistsError(tr_func('err_file_exists', path=str(target)))
+            
+            # Atomic Move (oder copy+delete)
+            shutil.move(str(tmp_path), str(target))
+            return tr_func('ok_decrypted', path=str(target))
+            
+    except Exception as e:
+        if tmp_path.exists(): secure_delete(tmp_path)
+        raise e
 
 
 def generate_keyfile(path: str, size: int = 32, **kwargs) -> str:
@@ -1467,7 +1439,7 @@ class ShortcutsDialog(QDialog):
             action_item.setFlags(action_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 0, action_item)
             
-            # Current shortcut - FIX: Use display_key to access the dictionary
+            # Current shortcut
             current_shortcut = self.current_shortcuts.get(display_key, "")
             current_item = QTableWidgetItem(current_shortcut)
             current_item.setFlags(current_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -1673,7 +1645,6 @@ class TimencApp(QMainWindow):
         """Checks for updates without blocking main thread excessively or showing errors."""
         try:
             latest_v, url = get_latest_release_info()
-            # FIX: Semantischer Versionsvergleich statt Stringvergleich
             if latest_v and _parse_version(latest_v) > _parse_version(APP_VERSION):
                 self._show_update_dialog(latest_v, url)
         except Exception:
@@ -2268,11 +2239,9 @@ class TimencApp(QMainWindow):
         if hasattr(self, 'thread') and self.thread is not None:
             try:
                 # Versuche zu prüfen, ob der Thread läuft
-                # Wenn das C++ Objekt bereits gelöscht wurde, wird eine Exception geworfen
                 if self.thread.isRunning():
                     return  # Ein Thread läuft bereits, also nichts tun
             except RuntimeError:
-                # C++ Objekt wurde bereits gelöscht, setze auf None und fahre fort
                 self.thread = None
                 self.worker = None
         
@@ -2322,7 +2291,7 @@ class TimencApp(QMainWindow):
                     self.thread.quit()
                     self.thread.wait(100)
             except RuntimeError:
-                pass  # Thread wurde bereits gelöscht
+                pass
         self._cleanup_thread()
 
     def _on_task_finished(self, message: str):
