@@ -1,6 +1,8 @@
 name: Build Release Binaries
+
 permissions:
   contents: write
+
 on:
   release:
     types: [published]
@@ -17,7 +19,6 @@ jobs:
             name: Windows
             pyinstaller_flags: --onefile --windowed --icon Images/TimENC-Icon.ico --name TimENC
           
-          # macOS: Nutzt macos-14 (Apple Silicon) wie gewünscht
           - os: macos-14
             name: macOS
             pyinstaller_flags: --onedir --windowed --icon Images/TimENC-Icon.icns --name TimENC
@@ -33,7 +34,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      # FIX 1: Setzt die Shell explizit auf Bash, damit die 'if [ -f ... ]' Syntax auf Windows funktioniert.
       - name: Install Python deps
         shell: bash
         run: |
@@ -44,7 +44,6 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller ${{ matrix.pyinstaller_flags }} timenc.py
 
-      # FIX 2 (Teil 1): Logik zur Bereinigung von Versions-Tags, falls ungültige Zeichen oder kein numerischer Anfang vorhanden sind.
       - name: Extract and Validate version
         id: version
         shell: bash
@@ -52,14 +51,12 @@ jobs:
           TAG="${{ github.event.release.tag_name }}"
           RAW_VERSION="${TAG#v}"
           
-          # SAFE_VERSION: Nur Buchstaben, Zahlen, Punkt und Bindestrich erlaubt (für Dateinamen/Setup-Header).
           SAFE_VERSION=$(echo "$RAW_VERSION" | sed 's/[^a-zA-Z0-9.-]/-/g')
           
-          # DEB_VERSION: Muss mit einer Ziffer beginnen (sonst schlägt dpkg-deb fehl).
           DEB_VERSION="$RAW_VERSION"
           if [[ ! "$RAW_VERSION" =~ ^[0-9] ]]; then
             echo "::notice title=Invalid Version Tag::Tag does not start with a number. Using fallback version for DEB/RPM."
-            DEB_VERSION="0.0.0-$SAFE_VERSION" # Fügt ein sicheres numerisches Präfix hinzu
+            DEB_VERSION="0.0.0-$SAFE_VERSION"
           fi
           
           echo "safe_version=$SAFE_VERSION" >> $GITHUB_OUTPUT
@@ -74,7 +71,6 @@ jobs:
         if: matrix.name == 'Windows'
         shell: pwsh
         run: |
-          # Nutzt den sicheren Versions-String für Dateinamen und Setup (fixiert ungültige Zeichen)
           $VERSION = "${{ steps.version.outputs.safe_version }}"
           $ORIGINAL_EXE = "dist/TimENC.exe"
           $PORTABLE_EXE = "TimENC-$VERSION-windows-x86_64-portable.exe"
@@ -84,26 +80,26 @@ jobs:
           Copy-Item $ORIGINAL_EXE $PORTABLE_EXE
 
           $iss = @"
-          [Setup]
-          AppName=TimENC
-          AppVersion=$VERSION
-          AppPublisher=TimENC
-          DefaultDirName={autopf}\TimENC
-          UninstallDisplayName=TimENC
-          OutputDir=.
-          OutputBaseFilename=TimENC-$VERSION-windows-x86_64-setup
-          Compression=lzma2
-          SolidCompression=yes
-          ArchitecturesAllowed=x64
-          ArchitecturesInstallIn64BitMode=x64
-          DisableProgramGroupPage=yes
+[Setup]
+AppName=TimENC
+AppVersion=$VERSION
+AppPublisher=TimENC
+DefaultDirName={autopf}\TimENC
+UninstallDisplayName=TimENC
+OutputDir=.
+OutputBaseFilename=TimENC-$VERSION-windows-x86_64-setup
+Compression=lzma2
+SolidCompression=yes
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64
+DisableProgramGroupPage=yes
 
-          [Files]
-          Source: "$ORIGINAL_EXE"; DestDir: "{app}"; DestName: "TimENC.exe"
+[Files]
+Source: "$ORIGINAL_EXE"; DestDir: "{app}"; DestName: "TimENC.exe"
 
-          [Icons]
-          Name: "{autoprograms}\TimENC"; Filename: "{app}\TimENC.exe"
-          "@
+[Icons]
+Name: "{autoprograms}\TimENC"; Filename: "{app}\TimENC.exe"
+"@
 
           Set-Content -Path "setup.iss" -Value $iss
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "setup.iss"
@@ -161,31 +157,29 @@ jobs:
           # ---------- DEB ----------
           mkdir -p pkg/usr/bin pkg/opt/timenc pkg/DEBIAN
           cp -r dist/TimENC/* pkg/opt/timenc/
-          # Stelle sicher, dass die Hauptdatei ausführbar ist
           chmod +x pkg/opt/timenc/TimENC
 
           cat << EOF > pkg/usr/bin/timenc
-          #!/bin/bash
-          /opt/timenc/TimENC "\$@"
-          EOF
+#!/bin/bash
+/opt/timenc/TimENC "\$@"
+EOF
           chmod +x pkg/usr/bin/timenc
 
           cat << EOF > pkg/DEBIAN/control
-          Package: timenc
-          Version: $VERSION
-          Architecture: amd64
-          Maintainer: TimENC
-          Description: Secure File Encryption Tool
-          Depends: libc6
-          Section: utils
-          Priority: optional
-          EOF
+Package: timenc
+Version: $VERSION
+Architecture: amd64
+Maintainer: TimENC
+Description: Secure File Encryption Tool
+Depends: libc6
+Section: utils
+Priority: optional
+EOF
 
-          # Post-Installation Script
           cat << EOF > pkg/DEBIAN/postinst
-          #!/bin/bash
-          chmod +x /opt/timenc/TimENC
-          EOF
+#!/bin/bash
+chmod +x /opt/timenc/TimENC
+EOF
           chmod +x pkg/DEBIAN/postinst
 
           dpkg-deb --build pkg "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.deb"
@@ -201,31 +195,27 @@ jobs:
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
           cp -r dist/TimENC/* AppDir/usr/bin/
           cp Images/TimENC-Icon.png AppDir/usr/share/icons/hicolor/256x256/apps/timenc.png
-          
-          # Stelle sicher, dass die Hauptdatei ausführbar ist
           chmod +x AppDir/usr/bin/TimENC
 
           cat << EOF > AppDir/usr/share/applications/timenc.desktop
-          [Desktop Entry]
-          Type=Application
-          Name=TimENC
-          Exec=TimENC
-          Icon=timenc
-          Categories=Utility;
-          Terminal=false
-          EOF
+[Desktop Entry]
+Type=Application
+Name=TimENC
+Exec=TimENC
+Icon=timenc
+Categories=Utility;
+Terminal=false
+EOF
 
-          cat << 'EOF' > AppDir/AppRun
-          #!/bin/bash
-          HERE="$(dirname "$(readlink -f "${0}")")"
-          exec "${HERE}/usr/bin/TimENC" "$@"
-          EOF
-          chmod +x AppDir/AppRun
-
-          # Desktop und Icon auf oberster Ebene
           cp AppDir/usr/share/applications/timenc.desktop AppDir/
           cp AppDir/usr/share/icons/hicolor/256x256/apps/timenc.png AppDir/
-          mv AppDir/timenc.png AppDir/AppDir.png
+
+          cat << 'EOF' > AppDir/AppRun
+#!/bin/bash
+HERE="$(dirname "$(readlink -f "${0}")")"
+exec "${HERE}/usr/bin/TimENC" "$@"
+EOF
+          chmod +x AppDir/AppRun
 
           ARCH=x86_64 ./appimagetool-x86_64.AppImage --no-appstream AppDir "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.AppImage"
 
