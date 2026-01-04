@@ -194,9 +194,13 @@ EOF
 
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
           cp -r dist/TimENC/* AppDir/usr/bin/
-          cp Images/TimENC-Icon.png AppDir/usr/share/icons/hicolor/256x256/apps/timenc.png
           chmod +x AppDir/usr/bin/TimENC
 
+          # Icon direkt in AppDir UND in usr/share/icons
+          cp Images/TimENC-Icon.png AppDir/timenc.png
+          cp Images/TimENC-Icon.png AppDir/usr/share/icons/hicolor/256x256/apps/timenc.png
+
+          # Desktop-Datei
           cat << EOF > AppDir/usr/share/applications/timenc.desktop
 [Desktop Entry]
 Type=Application
@@ -208,8 +212,8 @@ Terminal=false
 EOF
 
           cp AppDir/usr/share/applications/timenc.desktop AppDir/
-          cp AppDir/usr/share/icons/hicolor/256x256/apps/timenc.png AppDir/
 
+          # AppRun
           cat << 'EOF' > AppDir/AppRun
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
