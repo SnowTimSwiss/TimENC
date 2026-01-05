@@ -76,7 +76,6 @@ jobs:
           $VERSION = "${{ steps.version.outputs.safe_version }}"
           $ORIGINAL_EXE = "dist/TimENC.exe"
           $PORTABLE_EXE = "TimENC-$VERSION-windows-x86_64-portable.exe"
-         
           if (!(Test-Path $ORIGINAL_EXE)) { Write-Error "Exe not found at $ORIGINAL_EXE"; exit 1 }
           Copy-Item $ORIGINAL_EXE $PORTABLE_EXE
           $iss = @"
