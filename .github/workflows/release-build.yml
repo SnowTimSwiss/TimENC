@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Install Build Dependencies nur auf Linux
+      # Linux-Build Dependencies
       - name: Install Build Dependencies
         if: runner.os == 'Linux'
         run: |
@@ -83,7 +83,9 @@ jobs:
           $PORTABLE_EXE = "TimENC-$VERSION-windows-x86_64-portable.exe"
           if (!(Test-Path $ORIGINAL_EXE)) { Write-Error "Exe not found at $ORIGINAL_EXE"; exit 1 }
           Copy-Item $ORIGINAL_EXE $PORTABLE_EXE
-          $iss = @"
+
+          # Inno Setup Content in Datei schreiben
+          $setupContent = @"
 [Setup]
 AppName=TimENC
 AppVersion=$VERSION
@@ -102,7 +104,7 @@ Source: "$ORIGINAL_EXE"; DestDir: "{app}"; DestName: "TimENC.exe"
 [Icons]
 Name: "{autoprograms}\TimENC"; Filename: "{app}\TimENC.exe"
 "@
-          Set-Content -Path "setup.iss" -Value $iss
+          $setupContent | Out-File -FilePath "setup.iss" -Encoding UTF8
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "setup.iss"
           Remove-Item "setup.iss"
 
@@ -199,10 +201,10 @@ exec "${HERE}/usr/bin/TimENC" "$@"
 EOF
           chmod +x AppDir/AppRun
 
-          # Setze fehlertolerante Umgebungsvariable für GitHub Runner
+          # Fehlertoleranz für GitHub Runner Libraries
           export LD_LIBRARY_PATH=/usr/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH || true
 
-          # Baue AppImage (ignoriert fehlende optionale Libraries)
+          # Baue AppImage
           ./appimagetool-x86_64.AppImage --no-appstream --skip-optional-libs AppDir "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.AppImage"
 
       - name: Upload Linux
