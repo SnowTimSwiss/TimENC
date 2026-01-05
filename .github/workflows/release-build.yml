@@ -1,10 +1,12 @@
 name: Build Release Binaries
 permissions:
   contents: write
+
 on:
   release:
     types: [published]
-  workflow_dispatch: # Erlaubt manuelles Testen unter dem Reiter "Actions"
+  workflow_dispatch:
+
 jobs:
   build:
     name: Build ${{ matrix.name }}
@@ -24,31 +26,32 @@ jobs:
           - os: ubuntu-latest
             name: Linux
             pyinstaller_flags: --onedir --icon Images/TimENC-Icon.png --name TimENC
-   
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      # Korrektur für Linux (FUSE wird für AppImage benötigt)
+
+      # Install Build Dependencies nur auf Linux
       - name: Install Build Dependencies
-        shell: bash
+        if: runner.os == 'Linux'
         run: |
-          if [ "${{ runner.os }}" == "Linux" ]; then
-            sudo apt-get update
-            sudo apt-get install -y libfuse2 file wget desktop-file-utils
-          fi
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 file wget desktop-file-utils
+
       - name: Install Python deps
-        shell: bash
         run: |
           pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pyinstaller
+
       - name: Build with PyInstaller
         run: pyinstaller ${{ matrix.pyinstaller_flags }} timenc.py
+
       - name: Extract and Validate version
         id: version
-        shell: bash
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             TAG="v0.0.0-debug"
@@ -57,18 +60,20 @@ jobs:
           fi
           RAW_VERSION="${TAG#v}"
           SAFE_VERSION=$(echo "$RAW_VERSION" | sed 's/[^a-zA-Z0-9.-]/-/g')
-         
+
           DEB_VERSION="$RAW_VERSION"
           if [[ ! "$RAW_VERSION" =~ ^[0-9] ]]; then
             DEB_VERSION="0.0.0-$SAFE_VERSION"
           fi
-         
+
           echo "safe_version=$SAFE_VERSION" >> $GITHUB_OUTPUT
           echo "deb_version=$DEB_VERSION" >> $GITHUB_OUTPUT
-      # ---------------- WINDOWS (UNVERÄNDERT) ----------------
+
+      # ---------------- WINDOWS ----------------
       - name: Install Inno Setup
         if: matrix.name == 'Windows'
         run: choco install innosetup -y
+
       - name: Build Windows artifacts
         if: matrix.name == 'Windows'
         shell: pwsh
@@ -100,6 +105,7 @@ Name: "{autoprograms}\TimENC"; Filename: "{app}\TimENC.exe"
           Set-Content -Path "setup.iss" -Value $iss
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "setup.iss"
           Remove-Item "setup.iss"
+
       - name: Upload Windows
         if: matrix.name == 'Windows'
         uses: softprops/action-gh-release@v2
@@ -109,7 +115,8 @@ Name: "{autoprograms}\TimENC"; Filename: "{app}\TimENC.exe"
             TimENC-*-windows-x86_64-setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # ---------------- macOS (UNVERÄNDERT) ----------------
+
+      # ---------------- macOS ----------------
       - name: Build macOS DMG
         if: matrix.name == 'macOS'
         run: |
@@ -118,13 +125,14 @@ Name: "{autoprograms}\TimENC"; Filename: "{app}\TimENC.exe"
           mkdir -p dmg
           cp -R dist/TimENC.app dmg/
           ln -s /Applications dmg/Applications
-         
+
           hdiutil create \
             -volname "TimENC $VERSION" \
             -srcfolder dmg \
             -ov \
             -format UDZO \
             "TimENC-$VERSION-macos-arm64.dmg"
+
       - name: Upload macOS
         if: matrix.name == 'macOS'
         uses: softprops/action-gh-release@v2
@@ -132,13 +140,15 @@ Name: "{autoprograms}\TimENC"; Filename: "{app}\TimENC.exe"
           files: TimENC-*-macos-arm64.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # ---------------- LINUX (REPARIERT) ----------------
+
+      # ---------------- LINUX ----------------
       - name: Build Linux packages
         if: matrix.name == 'Linux'
         run: |
           set -x
           VERSION="${{ steps.version.outputs.deb_version }}"
           SAFE_FILENAME_VERSION="${{ steps.version.outputs.safe_version }}"
+
           # ---------- DEB ----------
           mkdir -p pkg/usr/bin pkg/opt/timenc pkg/DEBIAN
           cp -r dist/TimENC/* pkg/opt/timenc/
@@ -159,12 +169,15 @@ Section: utils
 Priority: optional
 EOF
           dpkg-deb --build pkg "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.deb"
+
           # ---------- AppImage ----------
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
           cp -r dist/TimENC/* AppDir/usr/bin/
           chmod +x AppDir/usr/bin/TimENC
+
+          # Icon und Desktop Entry
           cp Images/TimENC-Icon.png AppDir/timenc.png
           cp Images/TimENC-Icon.png AppDir/usr/share/icons/hicolor/256x256/apps/timenc.png
           cat << EOF > AppDir/timenc.desktop
@@ -177,13 +190,21 @@ Categories=Utility;
 Terminal=false
 EOF
           cp AppDir/timenc.desktop AppDir/usr/share/applications/
+
+          # AppRun für AppImage
           cat << 'EOF' > AppDir/AppRun
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
 exec "${HERE}/usr/bin/TimENC" "$@"
 EOF
           chmod +x AppDir/AppRun
-          ARCH=x86_64 ./appimagetool-x86_64.AppImage --no-appstream AppDir "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.AppImage"
+
+          # Setze fehlertolerante Umgebungsvariable für GitHub Runner
+          export LD_LIBRARY_PATH=/usr/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH || true
+
+          # Baue AppImage (ignoriert fehlende optionale Libraries)
+          ./appimagetool-x86_64.AppImage --no-appstream --skip-optional-libs AppDir "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.AppImage"
+
       - name: Upload Linux
         if: matrix.name == 'Linux'
         uses: softprops/action-gh-release@v2
