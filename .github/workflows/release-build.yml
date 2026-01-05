@@ -6,6 +6,7 @@ permissions:
 on:
   release:
     types: [published]
+  workflow_dispatch: # Erlaubt manuelles Testen unter dem Reiter "Actions"
 
 jobs:
   build:
@@ -34,6 +35,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Korrektur für Linux (FUSE wird für AppImage benötigt)
+      - name: Install Build Dependencies
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y libfuse2 file wget desktop-file-utils
+          fi
+
       - name: Install Python deps
         shell: bash
         run: |
@@ -48,21 +58,23 @@ jobs:
         id: version
         shell: bash
         run: |
-          TAG="${{ github.event.release.tag_name }}"
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG="v0.0.0-debug"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+          fi
           RAW_VERSION="${TAG#v}"
-          
           SAFE_VERSION=$(echo "$RAW_VERSION" | sed 's/[^a-zA-Z0-9.-]/-/g')
           
           DEB_VERSION="$RAW_VERSION"
           if [[ ! "$RAW_VERSION" =~ ^[0-9] ]]; then
-            echo "::notice title=Invalid Version Tag::Tag does not start with a number. Using fallback version for DEB/RPM."
             DEB_VERSION="0.0.0-$SAFE_VERSION"
           fi
           
           echo "safe_version=$SAFE_VERSION" >> $GITHUB_OUTPUT
           echo "deb_version=$DEB_VERSION" >> $GITHUB_OUTPUT
 
-      # ---------------- WINDOWS ----------------
+      # ---------------- WINDOWS (UNVERÄNDERT) ----------------
       - name: Install Inno Setup
         if: matrix.name == 'Windows'
         run: choco install innosetup -y
@@ -115,7 +127,7 @@ Name: "{autoprograms}\TimENC"; Filename: "{app}\TimENC.exe"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ---------------- macOS (Apple Silicon) ----------------
+      # ---------------- macOS (UNVERÄNDERT) ----------------
       - name: Build macOS DMG
         if: matrix.name == 'macOS'
         run: |
@@ -141,16 +153,11 @@ Name: "{autoprograms}\TimENC"; Filename: "{app}\TimENC.exe"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ---------------- LINUX ----------------
-      - name: Install Linux tools
-        if: matrix.name == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y fakeroot dpkg-dev rpm alien libfuse2 wget file desktop-file-utils
-
+      # ---------------- LINUX (REPARIERT) ----------------
       - name: Build Linux packages
         if: matrix.name == 'Linux'
         run: |
+          set -x
           VERSION="${{ steps.version.outputs.deb_version }}"
           SAFE_FILENAME_VERSION="${{ steps.version.outputs.safe_version }}"
 
@@ -176,17 +183,7 @@ Section: utils
 Priority: optional
 EOF
 
-          cat << EOF > pkg/DEBIAN/postinst
-#!/bin/bash
-chmod +x /opt/timenc/TimENC
-EOF
-          chmod +x pkg/DEBIAN/postinst
-
           dpkg-deb --build pkg "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.deb"
-
-          # ---------- RPM (Konvertierung) ----------
-          fakeroot alien --to-rpm "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.deb" --scripts || true
-          mv timenc-*.rpm "TimENC-$SAFE_FILENAME_VERSION-linux-x86_64.rpm" || true
 
           # ---------- AppImage ----------
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
@@ -196,12 +193,10 @@ EOF
           cp -r dist/TimENC/* AppDir/usr/bin/
           chmod +x AppDir/usr/bin/TimENC
 
-          # Icon direkt in AppDir UND in usr/share/icons
           cp Images/TimENC-Icon.png AppDir/timenc.png
           cp Images/TimENC-Icon.png AppDir/usr/share/icons/hicolor/256x256/apps/timenc.png
 
-          # Desktop-Datei
-          cat << EOF > AppDir/usr/share/applications/timenc.desktop
+          cat << EOF > AppDir/timenc.desktop
 [Desktop Entry]
 Type=Application
 Name=TimENC
@@ -210,10 +205,8 @@ Icon=timenc
 Categories=Utility;
 Terminal=false
 EOF
+          cp AppDir/timenc.desktop AppDir/usr/share/applications/
 
-          cp AppDir/usr/share/applications/timenc.desktop AppDir/
-
-          # AppRun
           cat << 'EOF' > AppDir/AppRun
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
@@ -229,7 +222,6 @@ EOF
         with:
           files: |
             TimENC-*-linux-x86_64.deb
-            TimENC-*-linux-x86_64.rpm
             TimENC-*-linux-x86_64.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
