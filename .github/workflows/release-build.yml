@@ -1,1 +1,186 @@
+name: Build and Release Packages
 
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'  # Aktuellere und stabilere Version
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+          sudo apt-get update
+          sudo apt-get install -y fuse libfuse2 squashfs-tools ruby ruby-dev
+          sudo gem install --no-document fpm
+
+      - name: Debug - Show Python and PyInstaller version
+        run: |
+          python --version
+          pyinstaller --version
+
+      - name: Debug - List repository files
+        run: ls -la
+
+      - name: Build executable with PyInstaller
+        run: pyinstaller --onefile --name TimENC timenc.py
+
+      - name: Debug - List dist folder
+        run: ls -la dist/
+
+      - name: Create AppImage
+        run: |
+          mkdir -p TimENC.AppDir/usr/bin
+          cp dist/TimENC TimENC.AppDir/usr/bin/
+          # Falls du Icons oder .desktop-Datei hast, hier ergänzen
+          wget -O appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool TimENC.AppDir TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
+
+      - name: Debug - Show created AppImage
+        run: ls -la *.AppImage
+
+      - name: Create .deb package
+        run: |
+          fpm -s dir -t deb -n timenc -v ${{ github.event.release.tag_name }} \
+            --description "TimENC - Simple encryption tool" \
+            --url "https://github.com/SnowTimSwiss/TimENC" \
+            --architecture amd64 \
+            -p timenc_${{ github.event.release.tag_name }}_amd64.deb \
+            dist/TimENC=/usr/bin/timenc
+
+      - name: Debug - Show created .deb
+        run: ls -la *.deb
+
+      - name: Upload AppImage to release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
+          asset_name: TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
+          asset_content_type: application/octet-stream
+
+      - name: Upload .deb to release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./timenc_${{ github.event.release.tag_name }}_amd64.deb
+          asset_name: timenc_${{ github.event.release.tag_name }}_amd64.deb
+          asset_content_type: application/vnd.debian.binary-package
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+          choco install nsis -y
+
+      - name: Debug - List files
+        shell: pwsh
+        run: Get-ChildItem -Recurse
+
+      - name: Build portable EXE
+        run: pyinstaller --onefile --name TimENC-portable timenc.py
+
+      - name: Build installer (NSIS)
+        run: |
+          pyinstaller --onedir --name TimENC timenc.py
+          @"
+          !define APPNAME "TimENC"
+          !define VERSION "${{ github.event.release.tag_name }}"
+          Name "`${APPNAME}"
+          OutFile "TimENC-Setup-${{ github.event.release.tag_name }}.exe"
+          InstallDir "`$PROGRAMFILES\TimENC"
+          Section
+            SetOutPath `$INSTDIR`
+            File /r dist\TimENC\*
+            WriteUninstaller `$INSTDIR\uninstall.exe`
+          SectionEnd
+          Section "Uninstall"
+            Delete `$INSTDIR\uninstall.exe`
+            RMDir /r `$INSTDIR`
+          SectionEnd
+          "@ | Out-File -Encoding ASCII installer.nsi
+          makensis installer.nsi
+
+      - name: Debug - List created executables
+        shell: pwsh
+        run: Get-ChildItem *.exe
+
+      - name: Upload portable EXE
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./dist/TimENC-portable.exe
+          asset_name: TimENC-portable-${{ github.event.release.tag_name }}.exe
+          asset_content_type: application/octet-stream
+
+      - name: Upload installer EXE
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./TimENC-Setup-${{ github.event.release.tag_name }}.exe
+          asset_name: TimENC-Setup-${{ github.event.release.tag_name }}.exe
+          asset_content_type: application/octet-stream
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Debug - List files
+        run: ls -la
+
+      - name: Build macOS .app bundle
+        run: pyinstaller --onefile --windowed --name TimENC timenc.py
+
+      - name: Create DMG
+        run: |
+          mkdir dmg-staging
+          mv dist/TimENC.app dmg-staging/
+          hdiutil create -volname "TimENC" -srcfolder dmg-staging -ov -format UDZO TimENC-${{ github.event.release.tag_name }}.dmg
+
+      - name: Debug - Show DMG
+        run: ls -la *.dmg
+
+      - name: Upload DMG to release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./TimENC-${{ github.event.release.tag_name }}.dmg
+          asset_name: TimENC-${{ github.event.release.tag_name }}.dmg
+          asset_content_type: application/octet-stream
