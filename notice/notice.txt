@@ -1,0 +1,3 @@
+active = true
+
+notice = This is a test notice, you can ignore it!
