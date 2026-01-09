@@ -25,7 +25,7 @@ except ImportError:
 # Configuration Constants
 # -------------------------------------------------------------------
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 
 ENCRYPTION_FORMAT_VERSION = 3 
 
@@ -79,6 +79,47 @@ def get_latest_release_info() -> Tuple[Optional[str], Optional[str]]:
         return None, None
 
     return None, None
+
+# -------------------------------------------------------------------
+# NOTICE CHECKER LOGIC
+# -------------------------------------------------------------------
+
+def get_notice_info() -> Tuple[bool, str]:
+    """
+    Lädt die Notice-Datei von GitHub und gibt (active, notice_text) zurück.
+    """
+    if not REQUESTS_AVAILABLE:
+        return False, ""
+    
+    NOTICE_URL = "https://raw.githubusercontent.com/SnowTimSwiss/TimENC/main/notice/notice.txt"
+    
+    try:
+        response = requests.get(NOTICE_URL, timeout=3)
+        
+        if response.status_code != 200:
+            return False, ""
+        
+        content = response.text.strip()
+        lines = content.split('\n')
+        
+        active = False
+        notice = ""
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith('active'):
+                # Wert nach dem Gleichheitszeichen extrahieren
+                if '=' in line:
+                    value = line.split('=')[1].strip().lower()
+                    active = value == 'true'
+            elif line.startswith('notice'):
+                if '=' in line:
+                    notice = line.split('=', 1)[1].strip()
+        
+        return active, notice
+        
+    except Exception:
+        return False, ""
 
 # -------------------------------------------------------------------
 # LAZY IMPORT HELPERS
@@ -209,6 +250,7 @@ LANGUAGES = {
         'update_available_msg': "Heyy, du bist nicht mehr auf der neusen version, hier kannst du die neue herunterladen.\n\nNeue Version: {version}",
         'button_download': "Herunterladen",
         'button_later': "Später",
+        'notice_label': "📢 Notice: {text}",
     },
     'en': {
         'app_title': "TimENC {version} - Secure Encryption",
@@ -304,6 +346,7 @@ LANGUAGES = {
         'update_available_msg': "Heyy, you are no longer on the latest version, you can download the new one here.\n\nNew Version: {version}",
         'button_download': "Download",
         'button_later': "Later",
+        'notice_label': "📢 Notice: {text}",
     }
 }
 
@@ -814,6 +857,19 @@ QPushButton#NavButton:checked {
     color: #58A6FF;
     border-left: 3px solid #58A6FF;
     border-radius: 6px 0 0 6px;
+}
+
+/* Notice Label */
+QLabel#NoticeLabel {
+    color: #FFA500;
+    background-color: rgba(255, 165, 0, 0.1);
+    padding: 10px 15px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 165, 0, 0.3);
+    font-size: 13px;
+    font-weight: 500;
+    margin: 8px;
+    word-wrap: break-word;
 }
 
 /* ===== CONTENT AREA ===== */
@@ -1637,6 +1693,9 @@ class TimencApp(QMainWindow):
 
         # CHECK FOR UPDATES (Timer starts after 3 seconds to not block UI load)
         QTimer.singleShot(3000, self._check_updates_silently)
+        
+        # CHECK FOR NOTICE (Timer starts after 5 seconds)
+        QTimer.singleShot(5000, self._check_notice_silently)
 
     def _check_updates_silently(self):
         """Checks for updates without blocking main thread excessively or showing errors."""
@@ -1646,6 +1705,21 @@ class TimencApp(QMainWindow):
                 self._show_update_dialog(latest_v, url)
         except Exception:
             pass
+
+    def _check_notice_silently(self):
+        """Checks for notice without blocking main thread."""
+        try:
+            active, notice_text = get_notice_info()
+            if active and notice_text:
+                self._show_notice(notice_text)
+        except Exception:
+            pass
+
+    def _show_notice(self, notice_text: str):
+        """Shows the notice in the sidebar."""
+        if hasattr(self, 'notice_label'):
+            self.notice_label.setText(self.lang_manager.tr('notice_label', text=notice_text))
+            self.notice_label.show()
 
     def _show_update_dialog(self, version, url):
         """Shows the popup for a found update."""
@@ -1786,6 +1860,15 @@ class TimencApp(QMainWindow):
         nav_layout.addWidget(self.nav_encrypt_btn)
         nav_layout.addWidget(self.nav_decrypt_btn)
         nav_layout.addStretch()
+        
+        # Notice Label
+        self.notice_label = QLabel()
+        self.notice_label.setObjectName("NoticeLabel")
+        self.notice_label.setWordWrap(True)
+        self.notice_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.notice_label.hide()
+        nav_layout.addWidget(self.notice_label)
+        
         nav_layout.addWidget(self.nav_settings_btn)
 
     def _create_content_ui(self):
