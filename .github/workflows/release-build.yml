@@ -23,6 +23,11 @@ jobs:
           pip install pyinstaller
           sudo apt-get update
           sudo apt-get install -y fuse libfuse2 squashfs-tools ruby ruby-dev
+          # Qt/X11 dependencies for PySide6
+          sudo apt-get install -y libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+            libxcb-xinerama0 libxcb-xfixes0 libxkbcommon-x11-0 libxcb1 \
+            libgl1-mesa-glx libegl1 libdbus-1-3
           sudo gem install --no-document fpm
 
       - name: Debug - Show Python and PyInstaller version
@@ -34,7 +39,7 @@ jobs:
         run: ls -la
 
       - name: Build executable with PyInstaller
-        run: pyinstaller --onefile --name TimENC timenc.py
+        run: pyinstaller TimENC.spec
 
       - name: Debug - List dist folder
         run: ls -la dist/
@@ -42,11 +47,31 @@ jobs:
       - name: Create AppImage
         run: |
           mkdir -p TimENC.AppDir/usr/bin
+          mkdir -p TimENC.AppDir/usr/share/applications
+          mkdir -p TimENC.AppDir/usr/share/icons/hicolor/256x256/apps
           cp dist/TimENC TimENC.AppDir/usr/bin/
-          # Falls du Icons oder .desktop-Datei hast, hier ergänzen
+          cp TimENC.desktop TimENC.AppDir/usr/share/applications/
+          cp Images/TimENC-Icon.png TimENC.AppDir/usr/share/icons/hicolor/256x256/apps/timenc.png
+          # Create AppRun script with Qt plugin path
+          cat > TimENC.AppDir/AppRun << 'EOF'
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          export PATH="${HERE}/usr/bin:${PATH}"
+          export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+          export QT_PLUGIN_PATH="${HERE}/usr/lib/qt6/plugins:${QT_PLUGIN_PATH}"
+          export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/usr/lib/qt6/plugins/platforms:${QT_QPA_PLATFORM_PLUGIN_PATH}"
+          exec "${HERE}/usr/bin/TimENC" "$@"
+          EOF
+          chmod +x TimENC.AppDir/AppRun
+          # Create .desktop file in root for AppImage
+          cp TimENC.desktop TimENC.AppDir/
+          # Copy icon to root for AppImage
+          cp Images/TimENC-Icon.png TimENC.AppDir/timenc.png
           wget -O appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool
           ARCH=x86_64 ./appimagetool TimENC.AppDir TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
+          chmod +x TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
 
       - name: Debug - Show created AppImage
         run: ls -la *.AppImage

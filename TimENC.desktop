@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=TimENC
+GenericName=File Encryption Tool
+Comment=Secure file encryption with password and keyfile
+Exec=TimENC
+Icon=timenc
+Terminal=false
+Categories=Utility;Security;Encryption;
+Keywords=encryption;decrypt;security;password;
+StartupWMClass=TimENC
