@@ -2,7 +2,7 @@
 
 ![TimENC GUI](Images/showroom/timenc-gui.png)
 
-**TimENC** is a modern, cross-platform encryption tool built with Python and Tkinter.
+**TimENC** is a modern, cross-platform encryption tool built with Python and PySide6.
 It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation for strong, authenticated encryption - designed to be secure, simple, and open-source.
 
 ---

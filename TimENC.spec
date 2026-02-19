@@ -1,4 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
+import os
 
 block_cipher = None
 
@@ -57,4 +59,21 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='Images/TimENC-Icon.ico' if sys.platform == 'win32' else ('Images/TimENC-Icon.icns' if sys.platform == 'darwin' else None)
 )
+
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        exe,
+        name='TimENC.app',
+        icon='Images/TimENC-Icon.icns',
+        bundle_identifier='com.snowtimswiss.timenc',
+        info_plist={
+            'CFBundleName': 'TimENC',
+            'CFBundleDisplayName': 'TimENC',
+            'CFBundleIdentifier': 'com.snowtimswiss.timenc',
+            'CFBundleVersion': '1.2.1',
+            'CFBundleShortVersionString': '1.2.1',
+            'NSHighResolutionCapable': 'True',
+        },
+    )

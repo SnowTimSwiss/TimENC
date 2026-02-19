@@ -33,6 +33,16 @@ ENCRYPTION_FORMAT_VERSION = 3
 CHUNK_SIZE = 64 * 1024
 TAG_SIZE = 16
 
+def resource_path(relative_path: str) -> str:
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 # -------------------------------------------------------------------
 # UPDATE CHECKER LOGIC
 # -------------------------------------------------------------------
@@ -144,7 +154,7 @@ try:
         QThread, QObject, Signal, Slot, Qt, QSettings, QSize,
         QPropertyAnimation, QEasingCurve, QTimer, QEvent
     )
-    from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeySequence, QShortcut, QAction
+    from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeySequence, QShortcut, QAction, QIcon
 except ImportError:
     print("Error: PySide6 not found.")
     print("Please install it using: pip install PySide6")
@@ -1638,6 +1648,7 @@ class TimencApp(QMainWindow):
         self.shortcut_manager = ShortcutManager(self.settings)
 
         self.setWindowTitle(self.lang_manager.tr('app_title', version=APP_VERSION))
+        self.setWindowIcon(QIcon(resource_path(os.path.join("Images", "TimENC-Icon.png"))))
         self.setGeometry(100, 100, 1100, 750)
         self.setMinimumSize(900, 650)
 
