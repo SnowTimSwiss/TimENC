@@ -7,6 +7,8 @@ on:
 jobs:
   build-linux:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -14,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'  # Aktuellere und stabilere Version
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
@@ -22,12 +24,12 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
           sudo apt-get update
-          sudo apt-get install -y fuse libfuse2 squashfs-tools ruby ruby-dev
+          sudo apt-get install -y squashfs-tools ruby ruby-dev
           # Qt/X11 dependencies for PySide6
           sudo apt-get install -y libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
             libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
             libxcb-xinerama0 libxcb-xfixes0 libxkbcommon-x11-0 libxcb1 \
-            libgl1-mesa-glx libegl1 libdbus-1-3
+            libgl1 libegl1 libdbus-1-3
           sudo gem install --no-document fpm
 
       - name: Debug - Show Python and PyInstaller version
@@ -70,7 +72,8 @@ jobs:
           cp Images/TimENC-Icon.png TimENC.AppDir/timenc.png
           wget -O appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool
-          ARCH=x86_64 ./appimagetool TimENC.AppDir TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
+          # Use --appimage-extract-and-run to avoid needing FUSE in CI
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run TimENC.AppDir TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
           chmod +x TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
 
       - name: Debug - Show created AppImage
@@ -89,23 +92,19 @@ jobs:
         run: ls -la *.deb
 
       - name: Upload AppImage to release
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
-          asset_name: TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
-          asset_content_type: application/octet-stream
+          files: TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
 
       - name: Upload .deb to release
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./timenc_${{ github.event.release.tag_name }}_amd64.deb
-          asset_name: timenc_${{ github.event.release.tag_name }}_amd64.deb
-          asset_content_type: application/vnd.debian.binary-package
+          files: timenc_${{ github.event.release.tag_name }}_amd64.deb
 
   build-windows:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -155,23 +154,20 @@ jobs:
         run: Get-ChildItem *.exe
 
       - name: Upload portable EXE
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./dist/TimENC-portable.exe
-          asset_name: TimENC-portable-${{ github.event.release.tag_name }}.exe
-          asset_content_type: application/octet-stream
+          files: dist/TimENC-portable.exe
+          name: TimENC-portable-${{ github.event.release.tag_name }}.exe
 
       - name: Upload installer EXE
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./TimENC-Setup-${{ github.event.release.tag_name }}.exe
-          asset_name: TimENC-Setup-${{ github.event.release.tag_name }}.exe
-          asset_content_type: application/octet-stream
+          files: TimENC-Setup-${{ github.event.release.tag_name }}.exe
 
   build-macos:
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -191,21 +187,21 @@ jobs:
         run: ls -la
 
       - name: Build macOS .app bundle
-        run: pyinstaller --onefile --windowed --name TimENC timenc.py
+        run: pyinstaller --windowed --name TimENC timenc.py
+
+      - name: Debug - List dist folder
+        run: ls -la dist/
 
       - name: Create DMG
         run: |
           mkdir dmg-staging
-          mv dist/TimENC.app dmg-staging/
+          cp -r dist/TimENC.app dmg-staging/
           hdiutil create -volname "TimENC" -srcfolder dmg-staging -ov -format UDZO TimENC-${{ github.event.release.tag_name }}.dmg
 
       - name: Debug - Show DMG
         run: ls -la *.dmg
 
       - name: Upload DMG to release
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./TimENC-${{ github.event.release.tag_name }}.dmg
-          asset_name: TimENC-${{ github.event.release.tag_name }}.dmg
-          asset_content_type: application/octet-stream
+          files: TimENC-${{ github.event.release.tag_name }}.dmg
