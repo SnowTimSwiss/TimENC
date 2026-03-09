@@ -25,7 +25,7 @@ except ImportError:
 # Configuration Constants
 # -------------------------------------------------------------------
 
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 
 ENCRYPTION_FORMAT_VERSION = 3 
 
@@ -643,6 +643,15 @@ def encrypt(input_path: str, output_file: str, password: str,
                 f_out.write(ciphertext)
                 chunk_counter += 1
             
+        # Original löschen falls Verschlüsselung erfolgreich
+        try:
+            if inp.is_file():
+                secure_delete(inp)
+            elif inp.is_dir():
+                shutil.rmtree(str(inp))
+        except Exception:
+            pass # Best effort deletion
+
         return tr_func('ok_encrypted', path=output_file)
         
     finally:

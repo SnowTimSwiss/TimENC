@@ -32,19 +32,8 @@ jobs:
             libgl1 libegl1 libdbus-1-3
           sudo gem install --no-document fpm
 
-      - name: Debug - Show Python and PyInstaller version
-        run: |
-          python --version
-          pyinstaller --version
-
-      - name: Debug - List repository files
-        run: ls -la
-
       - name: Build executable with PyInstaller
         run: pyinstaller TimENC.spec
-
-      - name: Debug - List dist folder
-        run: ls -la dist/
 
       - name: Create AppImage
         run: |
@@ -54,30 +43,21 @@ jobs:
           cp dist/TimENC TimENC.AppDir/usr/bin/
           cp TimENC.desktop TimENC.AppDir/usr/share/applications/
           cp Images/TimENC-Icon.png TimENC.AppDir/usr/share/icons/hicolor/256x256/apps/timenc.png
-          # Create AppRun script with Qt plugin path
+          
+          # Simplified AppRun for PyInstaller one-file
           cat > TimENC.AppDir/AppRun << 'EOF'
           #!/bin/bash
-          SELF=$(readlink -f "$0")
-          HERE=${SELF%/*}
-          export PATH="${HERE}/usr/bin:${PATH}"
-          export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-          export QT_PLUGIN_PATH="${HERE}/usr/lib/qt6/plugins:${QT_PLUGIN_PATH}"
-          export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/usr/lib/qt6/plugins/platforms:${QT_QPA_PLATFORM_PLUGIN_PATH}"
+          HERE="$(dirname "$(readlink -f "${0}")")"
           exec "${HERE}/usr/bin/TimENC" "$@"
           EOF
           chmod +x TimENC.AppDir/AppRun
-          # Create .desktop file in root for AppImage
+          
           cp TimENC.desktop TimENC.AppDir/
-          # Copy icon to root for AppImage
           cp Images/TimENC-Icon.png TimENC.AppDir/timenc.png
+          
           wget -O appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool
-          # Use --appimage-extract-and-run to avoid needing FUSE in CI
           ARCH=x86_64 ./appimagetool --appimage-extract-and-run TimENC.AppDir TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
-          chmod +x TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
-
-      - name: Debug - Show created AppImage
-        run: ls -la *.AppImage
 
       - name: Create .deb package
         run: |
@@ -88,18 +68,12 @@ jobs:
             -p timenc_${{ github.event.release.tag_name }}_amd64.deb \
             dist/TimENC=/usr/bin/timenc
 
-      - name: Debug - Show created .deb
-        run: ls -la *.deb
-
-      - name: Upload AppImage to release
+      - name: Upload Linux Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
-
-      - name: Upload .deb to release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: timenc_${{ github.event.release.tag_name }}_amd64.deb
+          files: |
+            TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
+            timenc_${{ github.event.release.tag_name }}_amd64.deb
 
   build-windows:
     runs-on: windows-latest
@@ -116,53 +90,55 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
           choco install nsis -y
 
-      - name: Debug - List files
-        shell: pwsh
-        run: Get-ChildItem -Recurse
-
-      - name: Build portable EXE
-        run: pyinstaller --onefile --name TimENC-portable timenc.py
-
-      - name: Build installer (NSIS)
+      - name: Build Portable EXE
         run: |
-          pyinstaller --onedir --name TimENC timenc.py
-          @"
+          pyinstaller TimENC.spec
+          move dist\TimENC.exe TimENC-portable-${{ github.event.release.tag_name }}.exe
+
+      - name: Prepare Installer Files
+        run: |
+          # Create onedir version for the installer to avoid slow startup
+          pyinstaller --onedir --noconfirm --windowed --name TimENC --icon Images/TimENC-Icon.ico --add-data "Images/TimENC-Icon.png;Images" timenc.py
+
+      - name: Build NSIS Installer
+        shell: pwsh
+        run: |
+          $ver = "${{ github.event.release.tag_name }}"
+          $nsisScript = @"
           !define APPNAME "TimENC"
-          !define VERSION "${{ github.event.release.tag_name }}"
-          Name "`${APPNAME}"
-          OutFile "TimENC-Setup-${{ github.event.release.tag_name }}.exe"
+          !define VERSION "`$ver"
+          Name "`$APPNAME"
+          OutFile "TimENC-Setup-`$ver.exe"
           InstallDir "`$PROGRAMFILES\TimENC"
+          Page directory
+          Page instfiles
           Section
-            SetOutPath `$INSTDIR`
-            File /r dist\TimENC\*
-            WriteUninstaller `$INSTDIR\uninstall.exe`
+            SetOutPath "`$INSTDIR"
+            File /r "dist\TimENC\*"
+            WriteUninstaller "`$INSTDIR\uninstall.exe"
+            # Create Shortcut
+            CreateShortcut "`$DESKTOP\TimENC.lnk" "`$INSTDIR\TimENC.exe"
           SectionEnd
           Section "Uninstall"
-            Delete `$INSTDIR\uninstall.exe`
-            RMDir /r `$INSTDIR`
+            Delete "`$DESKTOP\TimENC.lnk"
+            Delete "`$INSTDIR\uninstall.exe"
+            RMDir /r "`$INSTDIR"
           SectionEnd
-          "@ | Out-File -Encoding ASCII installer.nsi
+          "@
+          $nsisScript | Out-File -Encoding UTF8 installer.nsi
           makensis installer.nsi
 
-      - name: Debug - List created executables
-        shell: pwsh
-        run: Get-ChildItem *.exe
-
-      - name: Upload portable EXE
+      - name: Upload Windows Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/TimENC-portable.exe
-          name: TimENC-portable-${{ github.event.release.tag_name }}.exe
-
-      - name: Upload installer EXE
-        uses: softprops/action-gh-release@v2
-        with:
-          files: TimENC-Setup-${{ github.event.release.tag_name }}.exe
+          files: |
+            TimENC-portable-${{ github.event.release.tag_name }}.exe
+            TimENC-Setup-${{ github.event.release.tag_name }}.exe
 
   build-macos:
     runs-on: macos-latest
@@ -179,29 +155,18 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Debug - List files
-        run: ls -la
-
-      - name: Build macOS .app bundle
-        run: pyinstaller --windowed --name TimENC timenc.py
-
-      - name: Debug - List dist folder
-        run: ls -la dist/
-
-      - name: Create DMG
+      - name: Build macOS Assets
         run: |
+          pyinstaller TimENC.spec
           mkdir dmg-staging
           cp -r dist/TimENC.app dmg-staging/
           hdiutil create -volname "TimENC" -srcfolder dmg-staging -ov -format UDZO TimENC-${{ github.event.release.tag_name }}.dmg
 
-      - name: Debug - Show DMG
-        run: ls -la *.dmg
-
-      - name: Upload DMG to release
+      - name: Upload macOS Assets
         uses: softprops/action-gh-release@v2
         with:
           files: TimENC-${{ github.event.release.tag_name }}.dmg
