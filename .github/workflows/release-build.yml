@@ -94,6 +94,7 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
           choco install nsis -y
+          echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
 
       - name: Build Portable EXE
         run: |
@@ -131,7 +132,7 @@ jobs:
           SectionEnd
           "@
           $nsisScript | Out-File -Encoding UTF8 installer.nsi
-          makensis installer.nsi
+          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
 
       - name: Upload Windows Assets
         uses: softprops/action-gh-release@v2

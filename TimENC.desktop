@@ -6,6 +6,6 @@ Comment=Secure file encryption with password and keyfile
 Exec=TimENC
 Icon=timenc
 Terminal=false
-Categories=Utility;Security;Encryption;
+Categories=Utility;Security;X-Encryption;
 Keywords=encryption;decrypt;security;password;
 StartupWMClass=TimENC
