@@ -112,9 +112,9 @@ jobs:
           $ver = "${{ github.event.release.tag_name }}"
           $nsisScript = @"
           !define APPNAME "TimENC"
-          !define VERSION "`$ver"
-          Name "`$APPNAME"
-          OutFile "TimENC-Setup-`$ver.exe"
+          !define VERSION "$ver"
+          Name "TimENC"
+          OutFile "TimENC-Setup-$ver.exe"
           InstallDir "`$PROGRAMFILES\TimENC"
           Page directory
           Page instfiles
@@ -131,7 +131,7 @@ jobs:
             RMDir /r "`$INSTDIR"
           SectionEnd
           "@
-          $nsisScript | Out-File -Encoding UTF8 installer.nsi
+          $nsisScript | Out-File -Encoding ASCII installer.nsi
           & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
 
       - name: Upload Windows Assets
