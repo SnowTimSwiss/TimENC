@@ -14,6 +14,7 @@ import json
 import re
 import webbrowser
 import shutil
+import argparse
 
 try:
     import requests
@@ -25,7 +26,7 @@ except ImportError:
 # Configuration Constants
 # -------------------------------------------------------------------
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 
 ENCRYPTION_FORMAT_VERSION = 3 
 
@@ -2421,15 +2422,121 @@ class TimencApp(QMainWindow):
         msg_box.exec()
 
 
-def main():
-    app = QApplication(sys.argv)
+def cli_encrypt(args):
+    """CLI command for encryption."""
+    try:
+        result = encrypt(
+            input_path=args.input,
+            output_file=args.output,
+            password=args.password,
+            keyfile_path=args.keyfile
+        )
+        print(f"✅ {result}")
+        return 0
+    except Exception as e:
+        print(f"❌ Error: {e}", file=sys.stderr)
+        return 1
+
+
+def cli_decrypt(args):
+    """CLI command for decryption."""
+    try:
+        result = decrypt(
+            input_file=args.input,
+            out_dir=args.output,
+            password=args.password,
+            keyfile_path=args.keyfile
+        )
+        print(f"✅ {result}")
+        return 0
+    except Exception as e:
+        print(f"❌ Error: {e}", file=sys.stderr)
+        return 1
+
+
+def cli_generate_keyfile(args):
+    """CLI command for generating a keyfile."""
+    try:
+        output_path = Path(args.output)
+        
+        if output_path.exists():
+            print(f"❌ Keyfile already exists: {output_path}", file=sys.stderr)
+            return 1
+        
+        keyfile_data = secrets.token_bytes(256)
+        output_path.write_bytes(keyfile_data)
+        
+        # Set permissions to 600 (owner read/write only)
+        try:
+            os.chmod(output_path, stat.S_IRUSR | stat.S_IWUSR)
+        except Exception:
+            pass  # Best effort
+        
+        print(f"✅ Keyfile created: {output_path} ({len(keyfile_data)} Bytes)")
+        return 0
+    except Exception as e:
+        print(f"❌ Error: {e}", file=sys.stderr)
+        return 1
+
+
+def run_cli():
+    """Parse CLI arguments and run the appropriate command."""
+    parser = argparse.ArgumentParser(
+        prog="timenc",
+        description="TimENC - Secure file encryption with ChaCha20-Poly1305 and Argon2id"
+    )
     
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    
+    # Encrypt command
+    encrypt_parser = subparsers.add_parser("encrypt", help="Encrypt a file or folder")
+    encrypt_parser.add_argument("input", help="Input file or folder to encrypt")
+    encrypt_parser.add_argument("-o", "--output", required=True, help="Output .timenc file")
+    encrypt_parser.add_argument("-p", "--password", required=True, help="Password for encryption")
+    encrypt_parser.add_argument("-k", "--keyfile", help="Optional keyfile for additional entropy")
+    encrypt_parser.set_defaults(func=cli_encrypt)
+    
+    # Decrypt command
+    decrypt_parser = subparsers.add_parser("decrypt", help="Decrypt a .timenc file")
+    decrypt_parser.add_argument("input", help="Input .timenc file to decrypt")
+    decrypt_parser.add_argument("-o", "--output", required=True, help="Output folder for decrypted files")
+    decrypt_parser.add_argument("-p", "--password", required=True, help="Password for decryption")
+    decrypt_parser.add_argument("-k", "--keyfile", help="Optional keyfile that was used during encryption")
+    decrypt_parser.set_defaults(func=cli_decrypt)
+    
+    # Generate-keyfile command
+    keyfile_parser = subparsers.add_parser("generate-keyfile", help="Generate a new random keyfile")
+    keyfile_parser.add_argument("output", help="Output path for the new keyfile")
+    keyfile_parser.set_defaults(func=cli_generate_keyfile)
+    
+    # Version command
+    parser.add_argument("-v", "--version", action="version", version=f"TimENC {APP_VERSION}")
+    
+    args = parser.parse_args()
+    
+    if args.command is None:
+        parser.print_help()
+        return 0
+    
+    return args.func(args)
+
+
+def main():
+    # Check if running in CLI mode (any command-line arguments provided)
+    if len(sys.argv) > 1:
+        # Check if it's a CLI command or a file to open in GUI
+        if sys.argv[1] in ["encrypt", "decrypt", "generate-keyfile", "-h", "--help", "-v", "--version"]:
+            sys.exit(run_cli())
+    
+    # GUI mode
+    app = QApplication(sys.argv)
+
     app.setOrganizationName("Timenc")
     app.setApplicationName("TimencApp")
 
     settings = QSettings()
     lang_code = settings.value("language", "de")
-    
+
     lang_manager = LanguageManager(lang_code)
 
     app.setStyleSheet(APP_STYLESHEET)

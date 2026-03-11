@@ -68,6 +68,88 @@ These parameters can be adjusted to increase or decrease computational cost base
 
 ---
 
+## 💻 Command Line Interface (CLI)
+
+TimENC supports both GUI and CLI modes. Use the CLI for scripting, automation, or headless environments.
+
+### Basic Usage
+
+```bash
+# Show help
+python timenc.py --help
+
+# Show version
+python timenc.py --version
+```
+
+### Encrypt a File
+
+```bash
+python timenc.py encrypt <input_file> -o <output.timenc> -p <password>
+```
+
+**Example:**
+```bash
+python timenc.py encrypt secret.txt -o secret.timenc -p "MySecurePassword123"
+```
+
+### Encrypt a Folder
+
+```bash
+python timenc.py encrypt <folder_path> -o <output.timenc> -p <password>
+```
+
+**Example:**
+```bash
+python timenc.py encrypt ./my_documents -o backup.timenc -p "MySecurePassword123"
+```
+
+### Decrypt a File
+
+```bash
+python timenc.py decrypt <input.timenc> -o <output_folder> -p <password>
+```
+
+**Example:**
+```bash
+python timenc.py decrypt secret.timenc -o ./decrypted -p "MySecurePassword123"
+```
+
+### Using a Keyfile (Optional)
+
+For additional security, combine a password with a keyfile:
+
+```bash
+# Generate a new keyfile
+python timenc.py generate-keyfile ./mykeyfile.key
+
+# Encrypt with password + keyfile
+python timenc.py encrypt secret.txt -o secret.timenc -p "MyPassword" -k ./mykeyfile.key
+
+# Decrypt with password + keyfile
+python timenc.py decrypt secret.timenc -o ./decrypted -p "MyPassword" -k ./mykeyfile.key
+```
+
+### CLI Commands Overview
+
+| Command | Description |
+|---------|-------------|
+| `encrypt <input> -o <output> -p <password> [-k <keyfile>]` | Encrypt a file or folder |
+| `decrypt <input> -o <output> -p <password> [-k <keyfile>]` | Decrypt a .timenc file |
+| `generate-keyfile <output>` | Generate a new random keyfile (256 bytes) |
+
+### CLI Options
+
+| Option | Description |
+|--------|-------------|
+| `-o, --output` | Output path (file for encrypt, folder for decrypt) |
+| `-p, --password` | Password for encryption/decryption |
+| `-k, --keyfile` | Optional keyfile for additional entropy |
+| `-h, --help` | Show help message |
+| `-v, --version` | Show version information |
+
+---
+
 ## 📜 License
 
 **TimENC is licensed under the GNU General Public License v3.0 (GPL‑3.0).**

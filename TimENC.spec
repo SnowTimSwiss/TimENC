@@ -72,8 +72,8 @@ if sys.platform == 'darwin':
             'CFBundleName': 'TimENC',
             'CFBundleDisplayName': 'TimENC',
             'CFBundleIdentifier': 'com.snowtimswiss.timenc',
-            'CFBundleVersion': '1.3.0',
-            'CFBundleShortVersionString': '1.3.0',
+            'CFBundleVersion': '1.3.1',
+            'CFBundleShortVersionString': '1.3.1',
             'NSHighResolutionCapable': 'True',
         },
     )
