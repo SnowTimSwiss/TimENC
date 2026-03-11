@@ -26,7 +26,7 @@ except ImportError:
 # Configuration Constants
 # -------------------------------------------------------------------
 
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 
 ENCRYPTION_FORMAT_VERSION = 3 
 
@@ -769,23 +769,27 @@ def decrypt(input_file: str, out_dir: str, password: str,
     # Finalisierung: Extrahieren oder Verschieben
     outp = Path(out_dir)
     outp.mkdir(parents=True, exist_ok=True)
-    
+
     try:
         if is_dir == 1:
             with tarfile.open(tmp_path, "r") as tar:
                 safe_extract(tar, str(outp), tr_func=tr_func)
             secure_delete(tmp_path)
+            # Original .timenc Datei löschen nach erfolgreicher Entschlüsselung
+            secure_delete(enc)
             return tr_func('ok_decrypted_extracted', path=str(outp))
         else:
             target = outp / (original_name or "decrypted_file")
             if target.exists():
                 secure_delete(tmp_path)
                 raise FileExistsError(tr_func('err_file_exists', path=str(target)))
-            
+
             # Atomic Move (oder copy+delete)
             shutil.move(str(tmp_path), str(target))
+            # Original .timenc Datei löschen nach erfolgreicher Entschlüsselung
+            secure_delete(enc)
             return tr_func('ok_decrypted', path=str(target))
-            
+
     except Exception as e:
         if tmp_path.exists(): secure_delete(tmp_path)
         raise e
