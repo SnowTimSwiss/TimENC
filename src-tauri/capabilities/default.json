@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/tauri-config-schema-v2.json",
+  "identifier": "main",
+  "description": "Main capability for TimENC",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-ask",
+    "dialog:allow-confirm",
+    "dialog:allow-message",
+    "fs:default",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    "fs:allow-read-dir",
+    "fs:allow-copy-file",
+    "fs:allow-create-dir",
+    "fs:allow-remove-dir",
+    "fs:allow-remove-file",
+    "fs:allow-rename-file",
+    "fs:allow-exists",
+    "shell:default",
+    "shell:allow-open"
+  ]
+}
