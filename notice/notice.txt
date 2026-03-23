@@ -1,0 +1,3 @@
+active = false
+
+notice = [Here would be the warning or other notice]
