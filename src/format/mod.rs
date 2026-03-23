@@ -2,7 +2,7 @@
 
 use crate::crypto::{self, NONCE_SIZE, SALT_SIZE, TAG_SIZE};
 use crate::error::{Error, Result};
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 
 /// Chunk size for streaming encryption (64 KiB)
 pub const CHUNK_SIZE: usize = 64 * 1024;
@@ -183,11 +183,12 @@ pub mod v2 {
         keyfile_bytes: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
         let key = crate::crypto::derive_key(password, &header.salt, keyfile_bytes);
+        let header_bytes = header.to_bytes()?;
 
         // V2: Encrypt everything
-        let ciphertext = crate::crypto::encrypt_chunk(&key, &header.nonce, plaintext)?;
+        let ciphertext = crate::crypto::encrypt_chunk(&key, &header.nonce, plaintext, &header_bytes)?;
 
-        let mut output = header.to_bytes()?;
+        let mut output = header_bytes;
         output.extend(ciphertext);
         Ok(output)
     }
@@ -200,9 +201,10 @@ pub mod v2 {
         keyfile_bytes: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
         let key = crate::crypto::derive_key(password, &header.salt, keyfile_bytes);
+        let header_bytes = header.to_bytes()?;
 
         // V2: Decrypt all ciphertext
-        let plaintext = crate::crypto::decrypt_chunk(&key, &header.nonce, ciphertext)?;
+        let plaintext = crate::crypto::decrypt_chunk(&key, &header.nonce, ciphertext, &header_bytes)?;
 
         Ok(plaintext)
     }
@@ -211,6 +213,19 @@ pub mod v2 {
 /// V3 format handler (streaming)
 pub mod v3 {
     use super::*;
+
+    fn read_chunk<R: Read>(input: &mut R, buffer: &mut [u8]) -> io::Result<usize> {
+        let mut total = 0;
+
+        while total < buffer.len() {
+            match input.read(&mut buffer[total..])? {
+                0 => break,
+                n => total += n,
+            }
+        }
+
+        Ok(total)
+    }
 
     /// Encrypts data in V3 streaming format
     /// 
@@ -238,7 +253,7 @@ pub mod v3 {
         let mut buffer = [0u8; CHUNK_SIZE];
 
         loop {
-            let bytes_read = input.read(&mut buffer)?;
+            let bytes_read = read_chunk(input, &mut buffer)?;
             if bytes_read == 0 {
                 break;
             }
@@ -250,7 +265,7 @@ pub mod v3 {
                 .map_err(|_| Error::InvalidFormat)?;
 
             // Encrypt chunk
-            let ciphertext = crate::crypto::encrypt_chunk(&key, &current_nonce, &buffer[..bytes_read])
+            let ciphertext = crate::crypto::encrypt_chunk(&key, &current_nonce, &buffer[..bytes_read], &header_bytes)
                 .map_err(Error::from)?;
             output.write_all(&ciphertext)?;
 
@@ -271,6 +286,7 @@ pub mod v3 {
         keyfile_bytes: Option<&[u8]>,
     ) -> Result<()> {
         let key = crate::crypto::derive_key(password, &header.salt, keyfile_bytes);
+        let header_bytes = header.to_bytes()?;
 
         // Convert nonce to integer for incrementing (96-bit nonce = 12 bytes)
         let mut nonce_padded = [0u8; 16];
@@ -281,9 +297,12 @@ pub mod v3 {
         let mut encrypted_buffer = [0u8; ENC_CHUNK_SIZE];
 
         loop {
-            let bytes_read = input.read(&mut encrypted_buffer)?;
+            let bytes_read = read_chunk(input, &mut encrypted_buffer)?;
             if bytes_read == 0 {
                 break;
+            }
+            if bytes_read < TAG_SIZE {
+                return Err(Error::InvalidFormat);
             }
 
             // Calculate nonce for this chunk
@@ -293,7 +312,7 @@ pub mod v3 {
                 .map_err(|_| Error::InvalidFormat)?;
 
             // Decrypt chunk
-            let plaintext = crate::crypto::decrypt_chunk(&key, &current_nonce, &encrypted_buffer[..bytes_read])
+            let plaintext = crate::crypto::decrypt_chunk(&key, &current_nonce, &encrypted_buffer[..bytes_read], &header_bytes)
                 .map_err(|_| Error::DecryptionFailed)?;
             output.write_all(&plaintext)?;
 

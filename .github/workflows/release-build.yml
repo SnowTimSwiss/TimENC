@@ -8,6 +8,7 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: 1
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-linux:
@@ -16,13 +17,13 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Cargo Registry
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -32,11 +33,11 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Cache Tauri Target
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
-            src-tauri/target
-          key: ${{ runner.os }}-tauri-${{ hashFiles('src-tauri/Cargo.lock') }}
+            target
+          key: ${{ runner.os }}-tauri-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-tauri-
 
@@ -121,7 +122,7 @@ jobs:
           mkdir -p TimENC.AppDir/usr/share/applications
           mkdir -p TimENC.AppDir/usr/share/icons/hicolor/256x256/apps
           cp target/release/timenc TimENC.AppDir/usr/bin/
-          cp legacy/TimENC.desktop TimENC.AppDir/usr/share/applications/
+          cp TimENC.desktop TimENC.AppDir/usr/share/applications/
           cp src-tauri/icons/128x128.png TimENC.AppDir/usr/share/icons/hicolor/256x256/apps/timenc.png
 
           cat > TimENC.AppDir/AppRun << 'EOF'
@@ -131,7 +132,7 @@ jobs:
           EOF
           chmod +x TimENC.AppDir/AppRun
 
-          cp legacy/TimENC.desktop TimENC.AppDir/
+          cp TimENC.desktop TimENC.AppDir/
           cp src-tauri/icons/128x128.png TimENC.AppDir/timenc.png
 
           wget -O appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
@@ -143,13 +144,17 @@ jobs:
           cargo install cargo-deb --locked
           cargo deb --output timenc_${{ github.event.release.tag_name }}_amd64.deb
 
+      - name: Prepare Linux CLI Asset
+        run: |
+          cp target/release/timenc timenc-${{ github.event.release.tag_name }}-linux-x86_64
+
       - name: Upload Linux Assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
             TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
             timenc_${{ github.event.release.tag_name }}_amd64.deb
-            target/release/timenc
+            timenc-${{ github.event.release.tag_name }}-linux-x86_64
 
   build-windows:
     runs-on: windows-latest
@@ -157,13 +162,13 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Cargo Registry
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -173,11 +178,11 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Cache Tauri Target
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
-            src-tauri/target
-          key: ${{ runner.os }}-tauri-${{ hashFiles('src-tauri/Cargo.lock') }}
+            target
+          key: ${{ runner.os }}-tauri-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-tauri-
 
@@ -244,7 +249,7 @@ jobs:
           Page instfiles
           Section
             SetOutPath "`$INSTDIR"
-            File /r "src-tauri\target\release\*"
+            File /r "target\release\*"
             WriteUninstaller "`$INSTDIR\uninstall.exe"
             CreateShortcut "`$DESKTOP\TimENC.lnk" "`$INSTDIR\timenc.exe"
           SectionEnd
@@ -273,13 +278,13 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Cargo Registry
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -289,11 +294,11 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Cache Tauri Target
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
-            src-tauri/target
-          key: ${{ runner.os }}-tauri-${{ hashFiles('src-tauri/Cargo.lock') }}
+            target
+          key: ${{ runner.os }}-tauri-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-tauri-
 
@@ -345,7 +350,8 @@ jobs:
       - name: Create DMG
         run: |
           mkdir dmg-staging
-          cp -r src-tauri/target/release/TimENC.app dmg-staging/
+          test -d target/release/bundle/macos/TimENC.app
+          cp -r target/release/bundle/macos/TimENC.app dmg-staging/
           hdiutil create -volname "TimENC" -srcfolder dmg-staging -ov -format UDZO TimENC-${{ github.event.release.tag_name }}.dmg
 
       - name: Upload macOS Assets

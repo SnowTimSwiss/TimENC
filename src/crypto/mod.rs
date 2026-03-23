@@ -6,7 +6,7 @@ use argon2::{
     Version,
 };
 use chacha20poly1305::{
-    aead::{Aead, KeyInit},
+    aead::{Aead, KeyInit, Payload},
     ChaCha20Poly1305,
 };
 use rand::RngCore;
@@ -102,10 +102,11 @@ pub fn encrypt_chunk(
     key: &[u8; KEY_LEN],
     nonce: &[u8; NONCE_SIZE],
     plaintext: &[u8],
+    aad: &[u8],
 ) -> Result<Vec<u8>, chacha20poly1305::Error> {
     let cipher = ChaCha20Poly1305::new_from_slice(key)
         .map_err(|_| chacha20poly1305::Error)?;
-    cipher.encrypt(nonce.into(), plaintext)
+    cipher.encrypt(nonce.into(), Payload { msg: plaintext, aad })
 }
 
 /// Decrypts a single chunk using ChaCha20-Poly1305
@@ -113,8 +114,9 @@ pub fn decrypt_chunk(
     key: &[u8; KEY_LEN],
     nonce: &[u8; NONCE_SIZE],
     ciphertext: &[u8],
+    aad: &[u8],
 ) -> Result<Vec<u8>, chacha20poly1305::Error> {
     let cipher = ChaCha20Poly1305::new_from_slice(key)
         .map_err(|_| chacha20poly1305::Error)?;
-    cipher.decrypt(nonce.into(), ciphertext)
+    cipher.decrypt(nonce.into(), Payload { msg: ciphertext, aad })
 }

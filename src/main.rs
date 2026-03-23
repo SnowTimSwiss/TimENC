@@ -7,7 +7,6 @@ use timenc::{encrypt, decrypt, generate_keyfile, EncryptOptions, DecryptOptions}
 #[derive(Parser)]
 #[command(name = "timenc")]
 #[command(author = "TimENC Contributors")]
-#[command(version = "2.0.0")]
 #[command(about = "Secure file encryption with ChaCha20-Poly1305 and Argon2id", long_about = None)]
 struct Cli {
     #[command(subcommand)]
