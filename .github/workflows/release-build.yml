@@ -78,8 +78,8 @@ jobs:
 
       - name: Create minimal frontend
         run: |
-          mkdir -p dist
-          cat > dist/index.html << 'EOF'
+          mkdir -p src-tauri/dist
+          cat > src-tauri/dist/index.html << 'EOF'
           <!DOCTYPE html>
           <html lang="en">
           <head>
@@ -104,7 +104,7 @@ jobs:
           </head>
           <body>
               <div class="container">
-                  <h1>🔐 TimENC</h1>
+                  <h1>TimENC</h1>
                   <p>Secure Encryption Tool</p>
                   <p>Use the CLI for encryption operations.</p>
               </div>
@@ -189,7 +189,7 @@ jobs:
 
       - name: Create minimal frontend
         run: |
-          New-Item -ItemType Directory -Force -Path dist
+          New-Item -ItemType Directory -Force -Path src-tauri\dist
           @"
           <!DOCTYPE html>
           <html lang="en">
@@ -221,7 +221,7 @@ jobs:
               </div>
           </body>
           </html>
-          "@ | Out-File -Encoding UTF8 dist/index.html
+          "@ | Out-File -Encoding UTF8 src-tauri\dist\index.html
 
       - name: Build Tauri App
         run: cargo tauri build
@@ -305,8 +305,8 @@ jobs:
 
       - name: Create minimal frontend
         run: |
-          mkdir -p dist
-          cat > dist/index.html << 'EOF'
+          mkdir -p src-tauri/dist
+          cat > src-tauri/dist/index.html << 'EOF'
           <!DOCTYPE html>
           <html lang="en">
           <head>
@@ -331,7 +331,7 @@ jobs:
           </head>
           <body>
               <div class="container">
-                  <h1>🔐 TimENC</h1>
+                  <h1>TimENC</h1>
                   <p>Secure Encryption Tool</p>
                   <p>Use the CLI for encryption operations.</p>
               </div>
