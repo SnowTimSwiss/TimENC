@@ -1,5 +1,4 @@
 {
-  "$schema": "https://schema.tauri.app/tauri-config-schema-v2.json",
   "identifier": "main",
   "description": "Main capability for TimENC",
   "windows": ["main"],

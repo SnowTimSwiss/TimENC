@@ -2,12 +2,13 @@
   "$schema": "https://schema.tauri.app/tauri.conf.json",
   "productName": "TimENC",
   "version": "2.0.0",
-  "identifier": "com.timenc.app",
+  "identifier": "com.timenc",
   "build": {
     "beforeBuildCommand": "",
     "beforeDevCommand": "",
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:1420"
+    "devUrl": "http://localhost:1420",
+    "removeUnusedCommands": true
   },
   "app": {
     "withGlobalTauri": false,
