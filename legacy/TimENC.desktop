@@ -2,8 +2,8 @@
 Type=Application
 Name=TimENC
 GenericName=File Encryption Tool
-Comment=Secure file encryption with ChaCha20-Poly1305 and Argon2id (Rust)
-Exec=timenc
+Comment=Secure file encryption with password and keyfile
+Exec=TimENC
 Icon=timenc
 Terminal=false
 Categories=Utility;Security;X-Encryption;
