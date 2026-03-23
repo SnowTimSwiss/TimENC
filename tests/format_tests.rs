@@ -1,5 +1,6 @@
 //! Format tests for TIMENC v2 and v3 compatibility
 
+use std::io::{Cursor, Read};
 use timenc::format::{Header, CHUNK_SIZE};
 use timenc::crypto;
 
@@ -90,5 +91,95 @@ fn test_invalid_magic() {
 fn test_truncated_header() {
     let incomplete_data = b"TIMENC\x03\x00"; // Just magic + version + is_dir
     let result = Header::from_bytes(incomplete_data);
+    assert!(result.is_err());
+}
+
+struct SlowReader {
+    inner: Cursor<Vec<u8>>,
+    max_chunk: usize,
+}
+
+impl SlowReader {
+    fn new(data: Vec<u8>, max_chunk: usize) -> Self {
+        Self {
+            inner: Cursor::new(data),
+            max_chunk,
+        }
+    }
+}
+
+impl Read for SlowReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let limit = buf.len().min(self.max_chunk);
+        self.inner.read(&mut buf[..limit])
+    }
+}
+
+#[test]
+fn test_v3_streaming_roundtrip_with_fragmented_reads() {
+    let salt = crypto::generate_salt();
+    let nonce = crypto::generate_nonce();
+    let header = Header::new_v3("chunky.bin".to_string(), false, salt, nonce);
+    let password = b"password";
+    let plaintext = vec![0x42; CHUNK_SIZE * 2 + 123];
+
+    let mut encrypted = Vec::new();
+    timenc::format::v3::encrypt_streaming(
+        &mut Cursor::new(plaintext.clone()),
+        &mut encrypted,
+        &header,
+        password,
+        None,
+    )
+    .expect("encryption should succeed");
+
+    let header_len = header.to_bytes().expect("header bytes").len();
+    let ciphertext = encrypted[header_len..].to_vec();
+
+    let mut decrypted = Vec::new();
+    timenc::format::v3::decrypt_streaming(
+        &mut SlowReader::new(ciphertext, 17),
+        &mut decrypted,
+        &header,
+        password,
+        None,
+    )
+    .expect("decryption should succeed");
+
+    assert_eq!(decrypted, plaintext);
+}
+
+#[test]
+fn test_v3_decrypt_rejects_tampered_header() {
+    let salt = crypto::generate_salt();
+    let nonce = crypto::generate_nonce();
+    let header = Header::new_v3("original.txt".to_string(), false, salt, nonce);
+    let password = b"password";
+    let plaintext = b"secret payload";
+
+    let mut encrypted = Vec::new();
+    timenc::format::v3::encrypt_streaming(
+        &mut Cursor::new(plaintext),
+        &mut encrypted,
+        &header,
+        password,
+        None,
+    )
+    .expect("encryption should succeed");
+
+    let mut tampered_header = header.clone();
+    tampered_header.original_name = "evil.txt".to_string();
+
+    let header_len = header.to_bytes().expect("header bytes").len();
+    let ciphertext = encrypted[header_len..].to_vec();
+
+    let result = timenc::format::v3::decrypt_streaming(
+        &mut Cursor::new(ciphertext),
+        &mut Vec::new(),
+        &tampered_header,
+        password,
+        None,
+    );
+
     assert!(result.is_err());
 }

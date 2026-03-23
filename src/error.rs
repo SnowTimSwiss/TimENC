@@ -50,6 +50,6 @@ impl From<chacha20poly1305::Error> for Error {
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
-        Error::Tar(e.to_string())
+        Error::Io(e.to_string())
     }
 }
