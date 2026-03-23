@@ -30,9 +30,7 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -57,6 +55,6 @@ ENV/
 .coverage
 htmlcov/
 
-# Legacy folder (should exist but good to ignore if recreated)
+# Legacy folder
 legacy/dist/
 legacy/build/
