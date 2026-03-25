@@ -1,4 +1,4 @@
-//! Format tests for TIMENC v2 and v3 compatibility
+//! Format tests for TIMENC v2, v3, and v4 compatibility
 
 use std::io::{Cursor, Read};
 use timenc::format::{Header, CHUNK_SIZE};
@@ -207,4 +207,72 @@ fn test_v3_decrypt_rejects_tampered_header() {
     );
 
     assert!(result.is_err());
+}
+
+#[test]
+fn test_v4_header_serialization_and_metadata_roundtrip() {
+    let salt = crypto::generate_salt();
+    let metadata_nonce = crypto::generate_nonce();
+    let data_nonce = crypto::generate_nonce();
+    let metadata = timenc::format::v4::Metadata::new("secret.txt".to_string(), false);
+    let metadata_len = (metadata.to_bytes().expect("metadata bytes").len() + crypto::TAG_SIZE) as u32;
+    let header = timenc::format::v4::Header::new(metadata_len, salt, metadata_nonce, data_nonce);
+
+    let bytes = header.to_bytes().expect("Failed to serialize v4 header");
+    let (parsed_header, header_len) = timenc::format::v4::Header::from_bytes(&bytes)
+        .expect("Failed to parse v4 header");
+
+    assert_eq!(header_len, bytes.len());
+    assert_eq!(parsed_header.version, 4);
+    assert_eq!(parsed_header.salt, salt);
+    assert_eq!(parsed_header.metadata_nonce, metadata_nonce);
+    assert_eq!(parsed_header.data_nonce, data_nonce);
+    assert_eq!(parsed_header.metadata_len, metadata_len);
+}
+
+#[test]
+fn test_v4_streaming_roundtrip_with_fragmented_reads() {
+    let salt = crypto::generate_salt();
+    let metadata_nonce = crypto::generate_nonce();
+    let data_nonce = crypto::generate_nonce();
+    let metadata = timenc::format::v4::Metadata::new("chunky.bin".to_string(), false);
+    let metadata_len = (metadata.to_bytes().expect("metadata bytes").len() + crypto::TAG_SIZE) as u32;
+    let header = timenc::format::v4::Header::new(metadata_len, salt, metadata_nonce, data_nonce);
+    let password = b"password";
+    let plaintext = vec![0x42; CHUNK_SIZE * 2 + 123];
+
+    let mut encrypted = Vec::new();
+    timenc::format::v4::encrypt_streaming(
+        &mut Cursor::new(plaintext.clone()),
+        &mut encrypted,
+        &header,
+        &metadata,
+        password,
+        None,
+    )
+    .expect("encryption should succeed");
+
+    let header_len = header.to_bytes().expect("header bytes").len();
+    let metadata_ciphertext = &encrypted[header_len..header_len + header.metadata_len as usize];
+    let decrypted_metadata = timenc::format::v4::decrypt_metadata(
+        metadata_ciphertext,
+        &header,
+        password,
+        None,
+    )
+    .expect("metadata decryption should succeed");
+    assert_eq!(decrypted_metadata, metadata);
+
+    let ciphertext = encrypted[header_len + header.metadata_len as usize..].to_vec();
+    let mut decrypted = Vec::new();
+    timenc::format::v4::decrypt_streaming(
+        &mut SlowReader::new(ciphertext, 17),
+        &mut decrypted,
+        &header,
+        password,
+        None,
+    )
+    .expect("decryption should succeed");
+
+    assert_eq!(decrypted, plaintext);
 }

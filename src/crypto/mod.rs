@@ -24,7 +24,7 @@ pub const NONCE_SIZE: usize = 12;
 /// Size of the authentication tag in bytes
 pub const TAG_SIZE: usize = 16;
 
-/// Default Argon2 parameters (compatible with Python TimENC v3)
+/// Default Argon2 parameters for legacy v3 compatibility.
 pub const ARGON2_TIME_COST: u32 = 4;
 pub const ARGON2_MEMORY_KIB: u32 = 131072; // 128 MiB
 pub const ARGON2_PARALLELISM: u32 = 4;
@@ -61,6 +61,18 @@ pub fn derive_key(
         combined.extend_from_slice(keyfile);
     }
 
+    derive_key_from_secret(&combined, salt, time_cost, memory_kib, parallelism)
+}
+
+/// Derives a key from an already assembled secret using Argon2id.
+pub fn derive_key_from_secret(
+    secret: &[u8],
+    salt: &[u8],
+    time_cost: u32,
+    memory_kib: u32,
+    parallelism: u32,
+) -> Zeroizing<[u8; KEY_LEN]> {
+
     // Create Argon2id instance with v3 parameters
     let params = Params::new(
         memory_kib,
@@ -73,7 +85,7 @@ pub fn derive_key(
 
     let mut key = Zeroizing::new([0u8; KEY_LEN]);
     argon2
-        .hash_password_into(&combined, salt, &mut key[..])
+        .hash_password_into(secret, salt, &mut key[..])
         .expect("Key derivation failed");
 
     key

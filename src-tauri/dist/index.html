@@ -480,7 +480,7 @@
         
         <div class="settings-group">
           <div class="settings-label" id="version-label">Version</div>
-          <div class="settings-desc" id="version-desc">TimENC v2.0.0</div>
+          <div class="settings-desc" id="version-desc">TimENC v2.1.0 - v4 encryption defaults</div>
         </div>
       </section>
     </div>
@@ -528,7 +528,7 @@
           title: "Settings",
           langLabel: "Language",
           versionLabel: "Version",
-          versionDesc: "TimENC v2.0.0 - ChaCha20-Poly1305 + Argon2id"
+          versionDesc: "TimENC v2.1.0 - v4 encrypted metadata + Argon2id"
         },
         common: {
           ready: "Ready",
@@ -582,7 +582,7 @@
           title: "Einstellungen",
           langLabel: "Sprache",
           versionLabel: "Version",
-          versionDesc: "TimENC v2.0.0 - ChaCha20-Poly1305 + Argon2id"
+          versionDesc: "TimENC v2.1.0 - v4 verschluesselte Metadaten + Argon2id"
         },
         common: {
           ready: "Bereit",
@@ -604,7 +604,7 @@
     const statusEl = document.getElementById("status");
     const resultEl = document.getElementById("result");
     const languageSelect = document.getElementById("language-select");
-    const CURRENT_VERSION = "2.0.0";
+    const CURRENT_VERSION = "2.1.0";
     
     function t(section, key) {
       return translations[currentLang][section]?.[key] || translations.en[section]?.[key] || "";

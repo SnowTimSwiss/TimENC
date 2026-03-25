@@ -33,7 +33,6 @@ fn test_encrypt_decrypt_file_roundtrip() {
         password: password.to_string(),
         keyfile_path: None,
         output_path: output_path.clone(),
-        delete_source: false,
     };
     
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -44,7 +43,6 @@ fn test_encrypt_decrypt_file_roundtrip() {
         password: password.to_string(),
         keyfile_path: None,
         output_dir: decrypt_temp.path().to_path_buf(),
-        delete_source: false,
     };
     
     let result_path = decrypt(&output_path, decrypt_options).expect("Decryption failed");
@@ -53,6 +51,31 @@ fn test_encrypt_decrypt_file_roundtrip() {
     // Verify content
     let decrypted_content = fs::read(&result_path).expect("Failed to read decrypted file");
     assert_eq!(original_content, &decrypted_content[..]);
+}
+
+#[test]
+fn test_encrypt_uses_v4_format() {
+    let original_content = b"Version check";
+    let password = "test_password_123";
+
+    let (input_path, _input_temp) = setup_test_file(original_content);
+    let encrypt_temp = tempfile::tempdir().expect("Failed to create encrypt temp dir");
+    let output_path = encrypt_temp.path().join("test.timenc");
+
+    let encrypt_options = EncryptOptions {
+        password: password.to_string(),
+        keyfile_path: None,
+        output_path: output_path.clone(),
+    };
+
+    encrypt(&input_path, encrypt_options).expect("Encryption failed");
+
+    let mut header = [0u8; 7];
+    let mut file = fs::File::open(&output_path).expect("Failed to open encrypted file");
+    use std::io::Read;
+    file.read_exact(&mut header).expect("Failed to read header");
+    assert_eq!(&header[0..6], b"TIMENC");
+    assert_eq!(header[6], 4);
 }
 
 #[test]
@@ -76,7 +99,6 @@ fn test_encrypt_decrypt_with_keyfile() {
         password: password.to_string(),
         keyfile_path: Some(keyfile_path.clone()),
         output_path: output_path.clone(),
-        delete_source: false,
     };
     
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -87,7 +109,6 @@ fn test_encrypt_decrypt_with_keyfile() {
         password: password.to_string(),
         keyfile_path: Some(keyfile_path),
         output_dir: decrypt_temp.path().to_path_buf(),
-        delete_source: false,
     };
     
     let result_path = decrypt(&output_path, decrypt_options).expect("Decryption failed");
@@ -115,7 +136,6 @@ fn test_decrypt_wrong_password() {
         password: password.to_string(),
         keyfile_path: None,
         output_path: output_path.clone(),
-        delete_source: false,
     };
     
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -125,7 +145,6 @@ fn test_decrypt_wrong_password() {
         password: wrong_password.to_string(),
         keyfile_path: None,
         output_dir: decrypt_temp.path().to_path_buf(),
-        delete_source: false,
     };
     
     let result = decrypt(&output_path, decrypt_options);
@@ -155,7 +174,6 @@ fn test_encrypt_decrypt_directory() {
         password: password.to_string(),
         keyfile_path: None,
         output_path: output_path.clone(),
-        delete_source: false,
     };
     
     encrypt(&input_dir, encrypt_options).expect("Encryption failed");
@@ -166,7 +184,6 @@ fn test_encrypt_decrypt_directory() {
         password: password.to_string(),
         keyfile_path: None,
         output_dir: decrypt_temp.path().to_path_buf(),
-        delete_source: false,
     };
     
     let result_path = decrypt(&output_path, decrypt_options).expect("Decryption failed");
@@ -234,7 +251,6 @@ fn test_decrypt_rejects_header_filename_traversal() {
             password: "password".to_string(),
             keyfile_path: None,
             output_dir: output_dir.clone(),
-            delete_source: false,
         },
     );
 
@@ -293,7 +309,6 @@ fn test_decrypt_rejects_tar_traversal_entries() {
             password: "password".to_string(),
             keyfile_path: None,
             output_dir: output_dir.clone(),
-            delete_source: false,
         },
     );
 
@@ -335,7 +350,6 @@ fn test_decrypt_uses_header_argon2_parameters() {
             password: "password".to_string(),
             keyfile_path: None,
             output_dir,
-            delete_source: false,
         },
     )
     .expect("decryption should succeed");
