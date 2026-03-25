@@ -88,10 +88,35 @@ fn test_invalid_magic() {
 }
 
 #[test]
+fn test_read_header_streaming_matches_from_bytes() {
+    let salt = crypto::generate_salt();
+    let nonce = crypto::generate_nonce();
+    let header = Header::new_v3("streamed.txt".to_string(), false, salt, nonce);
+    let bytes = header.to_bytes().expect("Failed to serialize header");
+
+    let (parsed_header, header_len) =
+        Header::read_from(&mut Cursor::new(bytes.clone())).expect("Failed to read streamed header");
+
+    assert_eq!(header_len, bytes.len());
+    assert_eq!(parsed_header.original_name, header.original_name);
+    assert_eq!(parsed_header.time_cost, header.time_cost);
+    assert_eq!(parsed_header.memory_kib, header.memory_kib);
+    assert_eq!(parsed_header.parallelism, header.parallelism);
+}
+
+#[test]
 fn test_truncated_header() {
     let incomplete_data = b"TIMENC\x03\x00"; // Just magic + version + is_dir
     let result = Header::from_bytes(incomplete_data);
     assert!(result.is_err());
+}
+
+#[test]
+fn test_sanitize_output_name_rejects_traversal() {
+    assert!(timenc::format::sanitize_output_name("../evil.txt").is_err());
+    assert!(timenc::format::sanitize_output_name("nested/evil.txt").is_err());
+    assert!(timenc::format::sanitize_output_name("/absolute.txt").is_err());
+    assert!(timenc::format::sanitize_output_name("safe.txt").is_ok());
 }
 
 struct SlowReader {

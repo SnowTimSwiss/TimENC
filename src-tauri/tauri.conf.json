@@ -11,7 +11,7 @@
     "removeUnusedCommands": true
   },
   "app": {
-    "withGlobalTauri": false,
+    "withGlobalTauri": true,
     "windows": [
       {
         "fullscreen": false,
@@ -41,6 +41,15 @@
     ],
     "resources": [],
     "externalBin": [],
+    "fileAssociations": [
+      {
+        "ext": ["timenc"],
+        "name": "TimENC Encrypted File",
+        "description": "TimENC encrypted container",
+        "mimeType": "application/x-timenc",
+        "role": "Editor"
+      }
+    ],
     "linux": {
       "deb": {
         "depends": []

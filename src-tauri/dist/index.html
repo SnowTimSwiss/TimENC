@@ -1,43 +1,359 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TimENC</title>
-    <style>
-        body {
-            font-family: Arial, Helvetica, sans-serif;
-            display: grid;
-            place-items: center;
-            min-height: 100vh;
-            margin: 0;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #f3f4f6;
-        }
-
-        .container {
-            text-align: center;
-            padding: 40px;
-        }
-
-        h1 {
-            margin: 0 0 12px;
-            color: #6ee7ff;
-            font-size: 2.2rem;
-        }
-
-        p {
-            margin: 0;
-            color: #cbd5e1;
-            line-height: 1.5;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TimENC</title>
+  <style>
+    :root{--bg:#f2ece0;--shell:#fffcf6eb;--panel:#ffffffbf;--line:#24342d22;--text:#1d2824;--muted:#5f6c63;--accent:#0f766e;--accent2:#b96d1c;--danger:#b42318;--success:#166534}
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;font-family:"Segoe UI",sans-serif;color:var(--text);background:linear-gradient(135deg,#efe7d8,#f8f5ee 45%,#e7f0e9);padding:24px}
+    .shell{max-width:1220px;min-height:calc(100vh - 48px);margin:0 auto;display:grid;grid-template-columns:240px 1fr;border:1px solid var(--line);border-radius:28px;background:var(--shell);overflow:hidden;box-shadow:0 24px 80px #1a231f29}
+    .side{padding:22px 16px;border-right:1px solid var(--line);background:linear-gradient(180deg,#0f766e12,transparent)}
+    .brand small{display:inline-block;padding:6px 10px;border-radius:999px;background:#0f766e1c;color:var(--accent);font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+    .brand h1{margin:12px 0 8px;font-size:2rem}.brand p{margin:0 0 18px;color:var(--muted);line-height:1.5;font-size:.95rem}
+    .nav{display:grid;gap:8px}.nav button{width:100%;text-align:left;border:1px solid transparent;border-radius:16px;padding:14px;background:transparent;font:inherit;cursor:pointer}.nav button strong{display:block;margin-bottom:4px}.nav button span{display:block;color:var(--muted);font-size:.86rem;line-height:1.35}.nav button.active{background:#ffffffb8;border-color:#0f766e24}
+    .note{margin-top:18px;padding:14px;border:1px solid var(--line);border-radius:18px;background:#ffffff8c;color:var(--muted);font-size:.87rem;line-height:1.5}
+    .main{display:flex;flex-direction:column}.top{display:flex;justify-content:space-between;gap:12px;padding:22px 28px 18px;border-bottom:1px solid var(--line)}.top h2{margin:0 0 6px;font-size:1.7rem}.top p{margin:0;color:var(--muted);line-height:1.5}
+    .status{min-width:220px;padding:12px 14px;border-radius:16px;border:1px solid var(--line);background:#ffffffb8;color:var(--muted);font-size:.92rem}.status.success{color:var(--success)}.status.error{color:var(--danger)}
+    .page{display:none;padding:24px 28px 28px}.page.active{display:block}.card{border:1px solid var(--line);border-radius:22px;background:var(--panel);padding:22px;margin-bottom:18px}.card h3{margin:0 0 8px}.card>p{margin:0 0 18px;color:var(--muted);line-height:1.55}
+    .field{margin-bottom:15px}.field label{display:block;margin:0 0 6px;font-weight:650;font-size:.92rem}.field small{display:block;margin-top:6px;color:var(--muted);font-size:.82rem;line-height:1.45}
+    .row{display:flex;gap:10px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+    input{width:100%;border:1px solid #24342d2e;border-radius:14px;padding:12px 14px;background:#fffffff0;color:var(--text);font:inherit}
+    button{border-radius:14px;font:inherit;cursor:pointer} .ghost{border:1px solid #24342d24;background:#ffffffe8;padding:12px 14px;white-space:nowrap}.small{border:1px solid #24342d24;background:#ffffffe8;padding:10px 12px;white-space:nowrap}.action{width:100%;border:0;padding:14px 18px;background:linear-gradient(135deg,var(--accent),#0c5f58);color:#f6fffd;font-weight:750}.action.alt{background:linear-gradient(135deg,var(--accent2),#915312)} button:disabled{opacity:.62;cursor:wait}
+    .toggle{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.9rem;margin-top:10px}.toggle input{width:auto;margin:0}
+    .strength{margin-top:10px}.bar{height:7px;border-radius:999px;background:#24342d18;overflow:hidden}.fill{height:100%;width:0;background:linear-gradient(90deg,#d14343,#e7a33e,#2d9d63)}.strength-label{margin-top:6px;color:var(--muted);font-size:.85rem}
+    .info{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:10px}.box{padding:14px;border:1px solid var(--line);border-radius:18px;background:#ffffffb3}.box strong{display:block;margin-bottom:6px}.box span{color:var(--muted);font-size:.88rem;line-height:1.45}
+    .result{border:1px solid var(--line);border-radius:18px;background:#ffffffbf;padding:16px;white-space:pre-wrap;line-height:1.55;min-height:92px}
+    @media (max-width:980px){.shell{grid-template-columns:1fr}.side{border-right:0;border-bottom:1px solid var(--line)}.top{flex-direction:column;align-items:flex-start}.grid,.info{grid-template-columns:1fr}}
+  </style>
 </head>
 <body>
-    <div class="container">
+  <main class="shell">
+    <aside class="side">
+      <div class="brand">
+        <small>TimENC 2</small>
         <h1>TimENC</h1>
-        <p>Secure Encryption Tool</p>
-        <p>Use the CLI for encryption operations.</p>
-    </div>
+        <p>The Tauri UI now follows the old Python app more closely: separate pages, stronger defaults and clearer workflow.</p>
+      </div>
+      <nav class="nav">
+        <button class="nav-btn active" data-page="encrypt"><strong id="nav-encrypt-title">Encrypt</strong><span id="nav-encrypt-copy">Input, output, password strength and keyfile flow.</span></button>
+        <button class="nav-btn" data-page="decrypt"><strong id="nav-decrypt-title">Decrypt</strong><span id="nav-decrypt-copy">Recover a file safely into a chosen folder.</span></button>
+        <button class="nav-btn" data-page="tools"><strong id="nav-tools-title">Tools</strong><span id="nav-tools-copy">Generate keyfiles and keep helpers nearby.</span></button>
+        <button class="nav-btn" data-page="settings"><strong id="nav-settings-title">Settings</strong><span id="nav-settings-copy">Current parity level and operational notes.</span></button>
+      </nav>
+      <div class="note" id="side-note">Still not full 1.x parity, but this is now a real multi-page app flow instead of a placeholder page.</div>
+    </aside>
+    <section class="main">
+      <header class="top">
+        <div>
+          <h2 id="page-title">Encrypt</h2>
+          <p id="page-subtitle">Encrypt a file or folder into a <code>.timenc</code> file with password and optional keyfile.</p>
+        </div>
+        <div id="status" class="status">Ready.</div>
+      </header>
+      <section id="page-encrypt" class="page active">
+        <div class="card">
+          <h3 id="encrypt-title">Encryption Workflow</h3>
+          <p id="encrypt-copy">Like the old app, this page guides input, output, password and keyfile in one place and auto-suggests the target path.</p>
+          <form id="encrypt-form">
+            <div class="field">
+              <label for="enc-input" id="enc-input-label">File or folder</label>
+              <div class="row">
+                <input id="enc-input" name="input" placeholder="C:\Files\project" required>
+                <button class="ghost" type="button" id="enc-browse-input">Browse</button>
+                <button class="ghost" type="button" id="enc-browse-folder">Folder</button>
+              </div>
+              <small id="enc-input-help">Directory inputs become encrypted archives automatically. You can also drop a file or folder onto the window.</small>
+            </div>
+            <div class="field">
+              <label for="enc-output" id="enc-output-label">Output <code>.timenc</code> file</label>
+              <div class="row">
+                <input id="enc-output" name="output" placeholder="Auto-suggested from input" required>
+                <button class="ghost" type="button" id="enc-suggest">Suggest</button>
+                <button class="ghost" type="button" id="enc-save-output">Save As</button>
+              </div>
+            </div>
+            <div class="grid">
+              <div class="field">
+              <label for="enc-password" id="enc-password-label">Password</label>
+                <div class="row">
+                  <input id="enc-password" name="password" type="password" required>
+                  <button class="ghost" type="button" data-toggle="enc-password">Show</button>
+                </div>
+                <div class="strength">
+                  <div class="bar"><div class="fill" id="enc-fill"></div></div>
+                  <div class="strength-label" id="enc-strength">Enter a password.</div>
+                </div>
+              </div>
+              <div class="field">
+                <label for="enc-keyfile" id="enc-keyfile-label">Keyfile path</label>
+                <div class="row">
+                  <input id="enc-keyfile" name="keyfile" placeholder="Optional">
+                  <button class="ghost" type="button" id="enc-browse-keyfile">Select</button>
+                  <button class="ghost" type="button" id="jump-tools">Generate</button>
+                </div>
+                <small id="enc-keyfile-help">With a keyfile, both password and keyfile are required later.</small>
+              </div>
+            </div>
+            <label class="toggle"><input id="enc-delete" type="checkbox"><span id="enc-delete-copy">Best-effort overwrite source file before deleting it</span></label>
+            <div class="info">
+              <div class="box"><strong id="enc-preview-title">Suggested Output</strong><span id="enc-preview">Waiting for input path.</span></div>
+              <div class="box"><strong id="enc-protection-title">Protection</strong><span id="enc-protection-copy">ChaCha20-Poly1305 with Argon2id and optional keyfile material.</span></div>
+              <div class="box"><strong id="enc-safety-title">Safer Restore</strong><span id="enc-safety-copy">Traversal attacks are now rejected in both filenames and archives.</span></div>
+            </div>
+            <div style="margin-top:18px"><button class="action" type="submit" id="encrypt-submit">Encrypt</button></div>
+          </form>
+        </div>
+      </section>
+      <section id="page-decrypt" class="page">
+        <div class="card">
+          <h3 id="decrypt-title">Decryption Workflow</h3>
+          <p id="decrypt-copy">This mirrors the old decrypt page: encrypted input, output folder, password and optional keyfile, with suggested restore location.</p>
+          <form id="decrypt-form">
+            <div class="field">
+              <label for="dec-input" id="dec-input-label">Encrypted <code>.timenc</code> file</label>
+              <div class="row">
+                <input id="dec-input" name="input" placeholder="C:\Files\secret.timenc" required>
+                <button class="ghost" type="button" id="dec-browse-input">Browse</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="dec-output" id="dec-output-label">Output folder</label>
+              <div class="row">
+                <input id="dec-output" name="output" placeholder="Auto-suggested from encrypted file" required>
+                <button class="ghost" type="button" id="dec-suggest">Suggest</button>
+                <button class="ghost" type="button" id="dec-browse-output">Folder</button>
+              </div>
+            </div>
+            <div class="grid">
+              <div class="field">
+                <label for="dec-password" id="dec-password-label">Password</label>
+                <div class="row">
+                  <input id="dec-password" name="password" type="password" required>
+                  <button class="ghost" type="button" data-toggle="dec-password">Show</button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="dec-keyfile" id="dec-keyfile-label">Keyfile path</label>
+                <div class="row">
+                  <input id="dec-keyfile" name="keyfile" placeholder="Optional">
+                  <button class="ghost" type="button" id="dec-browse-keyfile">Select</button>
+                </div>
+              </div>
+            </div>
+            <label class="toggle"><input id="dec-delete" type="checkbox"><span id="dec-delete-copy">Best-effort overwrite encrypted source file before deleting it</span></label>
+            <div class="info">
+              <div class="box"><strong id="dec-preview-title">Suggested Folder</strong><span id="dec-preview">Waiting for <code>.timenc</code> path.</span></div>
+              <div class="box"><strong id="dec-compat-title">Compatibility</strong><span id="dec-compat-copy">Header Argon2 parameters are now respected during decryption.</span></div>
+              <div class="box"><strong id="dec-safety-title">Restore Safety</strong><span id="dec-safety-copy">Recovered files stay inside the chosen output directory.</span></div>
+            </div>
+            <div style="margin-top:18px"><button class="action alt" type="submit" id="decrypt-submit">Decrypt</button></div>
+          </form>
+        </div>
+      </section>
+      <section id="page-tools" class="page">
+        <div class="card">
+          <h3 id="tools-title">Keyfile Tools</h3>
+          <p id="tools-copy">The old app surfaced keyfile generation directly in the main workflow. This page keeps that fast path explicit.</p>
+          <form id="keyfile-form">
+            <div class="field">
+              <label for="keyfile-output" id="keyfile-output-label">Keyfile path</label>
+              <div class="row">
+                <input id="keyfile-output" name="output" placeholder="C:\Keys\timenc.key" required>
+                <button class="ghost" type="button" id="fill-keyfile">Default</button>
+                <button class="ghost" type="button" id="keyfile-save-output">Save As</button>
+              </div>
+              <small id="keyfile-output-help">Generates a new 32-byte random keyfile. Existing files are not overwritten.</small>
+            </div>
+            <button class="action" type="submit" id="keyfile-submit">Generate Keyfile</button>
+          </form>
+        </div>
+        <div class="card">
+          <h3 id="result-title">Last Result</h3>
+          <p id="result-copy">Instead of transient text only, the latest operation stays visible here.</p>
+          <div id="result" class="result">No operation run yet.</div>
+        </div>
+      </section>
+      <section id="page-settings" class="page">
+        <div class="card">
+          <h3>Current UI State</h3>
+          <p id="settings-copy">Compared with 1.x, the Tauri frontend now has much better workflow parity, but not yet full feature parity.</p>
+          <div class="info">
+            <div class="box"><strong id="present-title">Now Present</strong><span id="present-copy">Navigation, guided forms, password visibility, password strength and output auto-suggestion.</span></div>
+            <div class="box"><strong id="missing-title">Still Missing</strong><span id="missing-copy">Native file pickers, drag-and-drop, multilingual settings and richer notifications.</span></div>
+            <div class="box"><strong id="why-title">Why</strong><span id="why-copy">The repo still uses a static HTML frontend rather than a full web app stack.</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3 id="lang-title">Language</h3>
+          <p id="lang-copy">Choose the interface language. The selection is stored locally and applied on the next render immediately.</p>
+          <div class="row">
+            <select id="language-select" style="width:220px;border:1px solid #24342d2e;border-radius:14px;padding:12px 14px;background:#fffffff0;color:#1d2824;font:inherit">
+              <option value="en">English</option>
+              <option value="de">Deutsch</option>
+            </select>
+          </div>
+        </div>
+        <div class="card">
+          <h3 id="update-title">Updates</h3>
+          <p id="update-copy">Check the latest GitHub release for TimENC.</p>
+          <div class="row">
+            <button class="ghost" type="button" id="check-update">Check Now</button>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+  <script>
+    const translations={
+      en:{
+        meta:{encrypt:["Encrypt","Encrypt a file or folder into a .timenc file with password and optional keyfile."],decrypt:["Decrypt","Recover a .timenc file into a chosen output folder."],tools:["Tools","Generate keyfiles and keep the latest result visible."],settings:["Settings","Current parity level of the Tauri UI compared with the old Python app."]},
+        text:{
+          navEncryptTitle:"Encrypt",navEncryptCopy:"Input, output, password strength and keyfile flow.",navDecryptTitle:"Decrypt",navDecryptCopy:"Recover a file safely into a chosen folder.",navToolsTitle:"Tools",navToolsCopy:"Generate keyfiles and keep helpers nearby.",navSettingsTitle:"Settings",navSettingsCopy:"Current parity level and operational notes.",sideNote:"Notice is intentionally gone, but the desktop flow now covers the important legacy behavior.",
+          encryptTitle:"Encryption Workflow",encryptCopy:"Like the old app, this page guides input, output, password and keyfile in one place and auto-suggests the target path.",encInputLabel:"File or folder",encInputHelp:"Directory inputs become encrypted archives automatically. You can also drop a file or folder onto the window.",encOutputLabel:"Output <code>.timenc</code> file",encPasswordLabel:"Password",encKeyfileLabel:"Keyfile path",encKeyfileHelp:"With a keyfile, both password and keyfile are required later.",encDeleteCopy:"Best-effort overwrite source file before deleting it",encPreviewTitle:"Suggested Output",encProtectionTitle:"Protection",encProtectionCopy:"ChaCha20-Poly1305 with Argon2id and optional keyfile material.",encSafetyTitle:"Safer Restore",encSafetyCopy:"Traversal attacks are now rejected in both filenames and archives.",encryptSubmit:"Encrypt",
+          decryptTitle:"Decryption Workflow",decryptCopy:"This mirrors the old decrypt page: encrypted input, output folder, password and optional keyfile, with suggested restore location.",decInputLabel:"Encrypted <code>.timenc</code> file",decOutputLabel:"Output folder",decPasswordLabel:"Password",decKeyfileLabel:"Keyfile path",decDeleteCopy:"Best-effort overwrite encrypted source file before deleting it",decPreviewTitle:"Suggested Folder",decCompatTitle:"Compatibility",decCompatCopy:"Header Argon2 parameters are now respected during decryption.",decSafetyTitle:"Restore Safety",decSafetyCopy:"Recovered files stay inside the chosen output directory.",decryptSubmit:"Decrypt",
+          toolsTitle:"Keyfile Tools",toolsCopy:"The old app surfaced keyfile generation directly in the main workflow. This page keeps that fast path explicit.",keyfileOutputLabel:"Keyfile path",keyfileOutputHelp:"Generates a new 32-byte random keyfile. Existing files are not overwritten.",keyfileSubmit:"Generate Keyfile",resultTitle:"Last Result",resultCopy:"Instead of transient text only, the latest operation stays visible here.",
+          settingsCopy:"Compared with 1.x, the Tauri frontend now has much better workflow parity, but not yet full feature parity.",presentTitle:"Now Present",presentCopy:"Navigation, guided forms, file association support, password visibility, password strength, drag-and-drop, language settings, update checks and output auto-suggestion.",missingTitle:"Still Missing",missingCopy:"Mostly Qt-specific polish details from the old app.",whyTitle:"Why",whyCopy:"The repo still uses a static HTML frontend rather than a full web app stack.",langTitle:"Language",langCopy:"Choose the interface language. The selection is stored locally and applied immediately.",updateTitle:"Updates",updateCopy:"Check the latest GitHub release for TimENC.",
+          browse:"Browse",folder:"Folder",saveAs:"Save As",suggest:"Suggest",select:"Select",generate:"Generate",defaultLabel:"Default",show:"Show",hide:"Hide",ready:"Ready.",working:"Working...",completed:"Completed.",noResult:"No operation run yet.",dropEncrypt:"Dropped item selected for encryption.",dropDecrypt:"Dropped file selected for decryption.",openedDecrypt:"Opened .timenc file and switched to decrypt."
+        }
+      },
+      de:{
+        meta:{encrypt:["Verschlüsseln","Verschlüssele eine Datei oder einen Ordner in eine .timenc-Datei mit Passwort und optionalem Keyfile."],decrypt:["Entschlüsseln","Stelle eine .timenc-Datei in einem gewählten Zielordner wieder her."],tools:["Werkzeuge","Erzeuge Keyfiles und behalte das letzte Resultat im Blick."],settings:["Einstellungen","Aktueller Paritätsstand der Tauri-Oberfläche gegenüber der alten Python-App."]},
+        text:{
+          navEncryptTitle:"Verschlüsseln",navEncryptCopy:"Input, Output, Passwortstärke und Keyfile-Ablauf.",navDecryptTitle:"Entschlüsseln",navDecryptCopy:"Stelle eine Datei sicher in einem Zielordner wieder her.",navToolsTitle:"Werkzeuge",navToolsCopy:"Erzeuge Keyfiles und halte Hilfsfunktionen griffbereit.",navSettingsTitle:"Einstellungen",navSettingsCopy:"Aktueller Paritätsstand und Betriebsdetails.",sideNote:"Notice ist absichtlich entfernt, aber der Desktop-Flow deckt jetzt die wichtigen Legacy-Verhaltensweisen ab.",
+          encryptTitle:"Verschlüsselungsablauf",encryptCopy:"Wie in der alten App führt diese Seite Input, Output, Passwort und Keyfile an einem Ort zusammen und schlägt den Zielpfad automatisch vor.",encInputLabel:"Datei oder Ordner",encInputHelp:"Ordner werden automatisch als Archiv verschlüsselt. Du kannst auch eine Datei oder einen Ordner auf das Fenster ziehen.",encOutputLabel:"Ausgabe-<code>.timenc</code>-Datei",encPasswordLabel:"Passwort",encKeyfileLabel:"Keyfile-Pfad",encKeyfileHelp:"Mit Keyfile werden später sowohl Passwort als auch Keyfile benötigt.",encDeleteCopy:"Quelldatei vor dem Löschen best-effort überschreiben",encPreviewTitle:"Vorgeschlagener Output",encProtectionTitle:"Schutz",encProtectionCopy:"ChaCha20-Poly1305 mit Argon2id und optionalem Keyfile-Material.",encSafetyTitle:"Sichere Wiederherstellung",encSafetyCopy:"Traversal-Angriffe werden jetzt in Dateinamen und Archiven blockiert.",encryptSubmit:"Verschlüsseln",
+          decryptTitle:"Entschlüsselungsablauf",decryptCopy:"Diese Seite entspricht dem alten Decrypt-Tab: verschlüsselte Eingabe, Zielordner, Passwort und optionales Keyfile mit vorgeschlagenem Ziel.",decInputLabel:"Verschlüsselte <code>.timenc</code>-Datei",decOutputLabel:"Zielordner",decPasswordLabel:"Passwort",decKeyfileLabel:"Keyfile-Pfad",decDeleteCopy:"Verschlüsselte Quelldatei vor dem Löschen best-effort überschreiben",decPreviewTitle:"Vorgeschlagener Ordner",decCompatTitle:"Kompatibilität",decCompatCopy:"Argon2-Headerparameter werden bei der Entschlüsselung jetzt korrekt respektiert.",decSafetyTitle:"Wiederherstellungsschutz",decSafetyCopy:"Wiederhergestellte Dateien bleiben im gewählten Zielordner.",decryptSubmit:"Entschlüsseln",
+          toolsTitle:"Keyfile-Werkzeuge",toolsCopy:"Die alte App hatte die Keyfile-Erstellung direkt im Hauptablauf. Diese Seite hält diesen Schnellzugriff explizit bereit.",keyfileOutputLabel:"Keyfile-Pfad",keyfileOutputHelp:"Erzeugt ein neues zufälliges 32-Byte-Keyfile. Bestehende Dateien werden nicht überschrieben.",keyfileSubmit:"Keyfile erzeugen",resultTitle:"Letztes Resultat",resultCopy:"Statt nur kurz sichtbarem Status bleibt das letzte Ergebnis hier stehen.",
+          settingsCopy:"Gegenüber 1.x ist die Tauri-Oberfläche jetzt deutlich näher dran, aber noch nicht in jedem Detail identisch.",presentTitle:"Jetzt vorhanden",presentCopy:"Navigation, geführte Formulare, Dateiverband-Unterstützung, Passwortsichtbarkeit, Passwortstärke, Drag-and-drop und Output-Vorschläge.",missingTitle:"Noch offen",missingCopy:"Legacy-Update-Check-Verhalten und einige Feinschliff-Details der alten Qt-App.",whyTitle:"Warum",whyCopy:"Das Repo nutzt weiterhin statisches HTML statt eines vollständigen Web-App-Stacks.",langTitle:"Sprache",langCopy:"Wähle die Oberflächensprache. Die Auswahl wird lokal gespeichert und sofort angewendet.",
+          browse:"Auswählen",folder:"Ordner",saveAs:"Speichern als",suggest:"Vorschlagen",select:"Wählen",generate:"Erzeugen",defaultLabel:"Standard",show:"Anzeigen",hide:"Verbergen",ready:"Bereit.",working:"Arbeite...",completed:"Abgeschlossen.",noResult:"Noch kein Vorgang ausgeführt.",dropEncrypt:"Abgelegtes Element für Verschlüsselung übernommen.",dropDecrypt:"Abgelegte Datei für Entschlüsselung übernommen.",openedDecrypt:".timenc-Datei geöffnet und zur Entschlüsselung gewechselt."
+        }
+      }
+    };
+    const statusEl=document.getElementById("status"),resultEl=document.getElementById("result");
+    const languageSelect=document.getElementById("language-select");
+    const CURRENT_VERSION="2.0.0";
+    let activePage="encrypt";
+    let currentLanguage=localStorage.getItem("timenc.language")||"en";
+    function t(key){return translations[currentLanguage].text[key]}
+    function setStatus(kind,msg){statusEl.className="status"+(kind?" "+kind:"");statusEl.textContent=msg}
+    function setResult(msg){resultEl.textContent=msg}
+    function switchPage(page){activePage=page;document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.page===page));document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.id==="page-"+page));document.getElementById("page-title").textContent=translations[currentLanguage].meta[page][0];document.getElementById("page-subtitle").textContent=translations[currentLanguage].meta[page][1]}
+    function invoke(cmd,payload){const t=window.__TAURI__;if(!t||!t.core||typeof t.core.invoke!=="function")throw new Error("Tauri runtime is not available.");return t.core.invoke(cmd,payload)}
+    function getDialogApi(){const t=window.__TAURI__;return t&&t.dialog?t.dialog:null}
+    function getWebviewApi(){const t=window.__TAURI__;return t&&t.webview?t.webview:null}
+    function getEventApi(){const t=window.__TAURI__;return t&&t.event?t.event:null}
+    async function openDialog(options){const dialog=getDialogApi();if(!dialog||typeof dialog.open!=="function")throw new Error("Tauri dialog API is not available.");return dialog.open(options)}
+    async function saveDialog(options){const dialog=getDialogApi();if(!dialog||typeof dialog.save!=="function")throw new Error("Tauri dialog API is not available.");return dialog.save(options)}
+    function scorePassword(p){let s=0;if(!p)return 0;if(p.length>=8)s+=25;if(p.length>=12)s+=15;if(/[a-z]/.test(p))s+=15;if(/[A-Z]/.test(p))s+=15;if(/\d/.test(p))s+=15;if(/[^A-Za-z0-9]/.test(p))s+=15;return Math.min(s,100)}
+    function updateStrength(){const p=document.getElementById("enc-password").value,score=scorePassword(p);document.getElementById("enc-fill").style.width=score+"%";let label=currentLanguage==="de"?"Passwort eingeben.":"Enter a password.";if(score>0&&score<35)label=currentLanguage==="de"?"Schwach":"Weak";else if(score<60)label=currentLanguage==="de"?"Mittel":"Fair";else if(score<80)label=currentLanguage==="de"?"Stark":"Strong";else if(score>=80)label=currentLanguage==="de"?"Sehr stark":"Very strong";document.getElementById("enc-strength").textContent=label}
+    function suggestEnc(){const input=document.getElementById("enc-input").value.trim();if(!input){document.getElementById("enc-preview").textContent=currentLanguage==="de"?"Warte auf Eingabepfad.":"Waiting for input path.";return ""}const norm=input.replace(/[\\/]+$/,""),parts=norm.split(/[/\\]/),name=parts[parts.length-1]||"encrypted",isFile=/\.[^./\\]+$/.test(name),outName=isFile?name.replace(/\.[^./\\]+$/,"")+".timenc":name+".timenc",prefix=norm.slice(0,norm.length-name.length),suggestion=prefix+outName;document.getElementById("enc-preview").textContent=suggestion;return suggestion}
+    function suggestDec(){const input=document.getElementById("dec-input").value.trim();if(!input){document.getElementById("dec-preview").textContent=currentLanguage==="de"?"Warte auf .timenc-Pfad.":"Waiting for .timenc path.";return ""}const norm=input.replace(/[\\/]+$/,""),idx=Math.max(norm.lastIndexOf("\\"),norm.lastIndexOf("/")),suggestion=idx>=0?norm.slice(0,idx):".";document.getElementById("dec-preview").textContent=suggestion;return suggestion}
+    function applyTranslations(){
+      languageSelect.value=currentLanguage;
+      const map={
+        navEncryptTitle:"nav-encrypt-title",navEncryptCopy:"nav-encrypt-copy",navDecryptTitle:"nav-decrypt-title",navDecryptCopy:"nav-decrypt-copy",navToolsTitle:"nav-tools-title",navToolsCopy:"nav-tools-copy",navSettingsTitle:"nav-settings-title",navSettingsCopy:"nav-settings-copy",sideNote:"side-note",
+        encryptTitle:"encrypt-title",encryptCopy:"encrypt-copy",encInputLabel:"enc-input-label",encInputHelp:"enc-input-help",encPasswordLabel:"enc-password-label",encKeyfileLabel:"enc-keyfile-label",encKeyfileHelp:"enc-keyfile-help",encDeleteCopy:"enc-delete-copy",encPreviewTitle:"enc-preview-title",encProtectionTitle:"enc-protection-title",encProtectionCopy:"enc-protection-copy",encSafetyTitle:"enc-safety-title",encSafetyCopy:"enc-safety-copy",
+        decryptTitle:"decrypt-title",decryptCopy:"decrypt-copy",decInputLabel:"dec-input-label",decOutputLabel:"dec-output-label",decPasswordLabel:"dec-password-label",decKeyfileLabel:"dec-keyfile-label",decDeleteCopy:"dec-delete-copy",decPreviewTitle:"dec-preview-title",decCompatTitle:"dec-compat-title",decCompatCopy:"dec-compat-copy",decSafetyTitle:"dec-safety-title",decSafetyCopy:"dec-safety-copy",
+        toolsTitle:"tools-title",toolsCopy:"tools-copy",keyfileOutputLabel:"keyfile-output-label",keyfileOutputHelp:"keyfile-output-help",resultTitle:"result-title",resultCopy:"result-copy",
+        settingsCopy:"settings-copy",presentTitle:"present-title",presentCopy:"present-copy",missingTitle:"missing-title",missingCopy:"missing-copy",whyTitle:"why-title",whyCopy:"why-copy",langTitle:"lang-title",langCopy:"lang-copy",updateTitle:"update-title",updateCopy:"update-copy"
+      };
+      Object.entries(map).forEach(([key,id])=>{const el=document.getElementById(id);const value=t(key);if(el&&value!==undefined)el.innerHTML=value});
+      document.getElementById("enc-output-label").innerHTML=t("encOutputLabel");
+      document.getElementById("dec-input-label").innerHTML=t("decInputLabel");
+      document.getElementById("encrypt-submit").textContent=t("encryptSubmit");
+      document.getElementById("decrypt-submit").textContent=t("decryptSubmit");
+      document.getElementById("keyfile-submit").textContent=t("keyfileSubmit");
+      document.getElementById("enc-browse-input").textContent=t("browse");
+      document.getElementById("enc-browse-folder").textContent=t("folder");
+      document.getElementById("enc-suggest").textContent=t("suggest");
+      document.getElementById("enc-save-output").textContent=t("saveAs");
+      document.getElementById("enc-browse-keyfile").textContent=t("select");
+      document.getElementById("jump-tools").textContent=t("generate");
+      document.getElementById("dec-browse-input").textContent=t("browse");
+      document.getElementById("dec-suggest").textContent=t("suggest");
+      document.getElementById("dec-browse-output").textContent=t("folder");
+      document.getElementById("dec-browse-keyfile").textContent=t("select");
+      document.getElementById("fill-keyfile").textContent=t("defaultLabel");
+      document.getElementById("keyfile-save-output").textContent=t("saveAs");
+      document.querySelectorAll("[data-toggle]").forEach(button=>button.textContent=button.dataset.visible==="1"?t("hide"):t("show"));
+      if(resultEl.textContent==="No operation run yet."||resultEl.textContent==="Noch kein Vorgang ausgeführt.")setResult(t("noResult"));
+      if(statusEl.textContent==="Ready."||statusEl.textContent==="Bereit.")setStatus("",t("ready"));
+      switchPage(activePage);
+      updateStrength();
+    }
+    function setLanguage(lang){
+      currentLanguage=lang;
+      localStorage.setItem("timenc.language",lang);
+      applyTranslations();
+    }
+    function handleOpenedTimenc(path){
+      if(!path)return;
+      document.getElementById("dec-input").value=path;
+      const suggestion=suggestDec();
+      const out=document.getElementById("dec-output");
+      if(!out.dataset.userEdited)out.value=suggestion;
+      switchPage("decrypt");
+      setStatus("", t("openedDecrypt"));
+      setResult(path);
+    }
+    function applyDroppedPath(path){
+      const value=Array.isArray(path)?path[0]:path;
+      if(!value||typeof value!=="string")return;
+      const looksEncrypted=/\.timenc$/i.test(value);
+      if(activePage==="decrypt"||looksEncrypted){
+        document.getElementById("dec-input").value=value;
+        const suggestion=suggestDec();
+        const out=document.getElementById("dec-output");
+        if(!out.dataset.userEdited)out.value=suggestion;
+        if(activePage!=="decrypt")switchPage("decrypt");
+        setStatus("", t("dropDecrypt"));
+        return;
+      }
+      document.getElementById("enc-input").value=value;
+      const suggestion=suggestEnc();
+      const out=document.getElementById("enc-output");
+      if(!out.dataset.userEdited)out.value=suggestion;
+      if(activePage!=="encrypt")switchPage("encrypt");
+      setStatus("", t("dropEncrypt"));
+    }
+    async function runForm(button,action){const txt=button.textContent;button.disabled=true;setStatus("",t("working"));try{const r=await action();const msg=r&&r.message?r.message:t("completed");const path=r&&r.path?"\nPath: "+r.path:"";if(r&&r.success===false){setStatus("error",msg);setResult(msg+path)}else{setStatus("success",msg);setResult(msg+path)}}catch(e){const msg=e instanceof Error?e.message:String(e);setStatus("error",msg);setResult(msg)}finally{button.disabled=false;button.textContent=txt}}
+    document.querySelectorAll(".nav-btn").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.page)));
+    document.querySelectorAll("[data-toggle]").forEach(b=>b.addEventListener("click",()=>{const input=document.getElementById(b.dataset.toggle),show=input.type==="password";input.type=show?"text":"password";b.dataset.visible=show?"1":"0";b.textContent=show?t("hide"):t("show")}));
+    document.getElementById("enc-input").addEventListener("input",()=>{const s=suggestEnc(),out=document.getElementById("enc-output");if(!out.dataset.userEdited)out.value=s});
+    document.getElementById("enc-output").addEventListener("input",()=>document.getElementById("enc-output").dataset.userEdited="1");
+    document.getElementById("enc-suggest").addEventListener("click",()=>{const s=suggestEnc();if(s){const out=document.getElementById("enc-output");out.value=s;delete out.dataset.userEdited}});
+    document.getElementById("dec-input").addEventListener("input",()=>{const s=suggestDec(),out=document.getElementById("dec-output");if(!out.dataset.userEdited)out.value=s});
+    document.getElementById("dec-output").addEventListener("input",()=>document.getElementById("dec-output").dataset.userEdited="1");
+    document.getElementById("dec-suggest").addEventListener("click",()=>{const s=suggestDec();if(s){const out=document.getElementById("dec-output");out.value=s;delete out.dataset.userEdited}});
+    document.getElementById("enc-password").addEventListener("input",updateStrength);
+    document.getElementById("enc-browse-input").addEventListener("click",async()=>{try{const selected=await openDialog({multiple:false,directory:false});if(selected){document.getElementById("enc-input").value=selected;const s=suggestEnc();const out=document.getElementById("enc-output");if(!out.dataset.userEdited)out.value=s}}catch(e){setStatus("error",e instanceof Error?e.message:String(e))}});
+    document.getElementById("enc-browse-folder").addEventListener("click",async()=>{try{const selected=await openDialog({multiple:false,directory:true});if(selected){document.getElementById("enc-input").value=selected;const s=suggestEnc();const out=document.getElementById("enc-output");if(!out.dataset.userEdited)out.value=s}}catch(e){setStatus("error",e instanceof Error?e.message:String(e))}});
+    document.getElementById("enc-save-output").addEventListener("click",async()=>{try{const suggested=document.getElementById("enc-output").value||suggestEnc()||"encrypted.timenc";const selected=await saveDialog({defaultPath:suggested,filters:[{name:"TIMENC Files",extensions:["timenc"]}]});if(selected){const out=document.getElementById("enc-output");out.value=selected;delete out.dataset.userEdited}}catch(e){setStatus("error",e instanceof Error?e.message:String(e))}});
+    document.getElementById("enc-browse-keyfile").addEventListener("click",async()=>{try{const selected=await openDialog({multiple:false,directory:false});if(selected)document.getElementById("enc-keyfile").value=selected}catch(e){setStatus("error",e instanceof Error?e.message:String(e))}});
+    document.getElementById("dec-browse-input").addEventListener("click",async()=>{try{const selected=await openDialog({multiple:false,directory:false,filters:[{name:"TIMENC Files",extensions:["timenc"]}]});if(selected){document.getElementById("dec-input").value=selected;const s=suggestDec();const out=document.getElementById("dec-output");if(!out.dataset.userEdited)out.value=s}}catch(e){setStatus("error",e instanceof Error?e.message:String(e))}});
+    document.getElementById("dec-browse-output").addEventListener("click",async()=>{try{const selected=await openDialog({multiple:false,directory:true,defaultPath:document.getElementById("dec-output").value||undefined});if(selected){const out=document.getElementById("dec-output");out.value=selected;delete out.dataset.userEdited}}catch(e){setStatus("error",e instanceof Error?e.message:String(e))}});
+    document.getElementById("dec-browse-keyfile").addEventListener("click",async()=>{try{const selected=await openDialog({multiple:false,directory:false});if(selected)document.getElementById("dec-keyfile").value=selected}catch(e){setStatus("error",e instanceof Error?e.message:String(e))}});
+    document.getElementById("jump-tools").addEventListener("click",()=>{switchPage("tools");document.getElementById("keyfile-output").focus()});
+    document.getElementById("fill-keyfile").addEventListener("click",()=>{const el=document.getElementById("keyfile-output");if(!el.value.trim())el.value="timenc.key"});
+    document.getElementById("keyfile-save-output").addEventListener("click",async()=>{try{const selected=await saveDialog({defaultPath:document.getElementById("keyfile-output").value||"timenc.key"});if(selected)document.getElementById("keyfile-output").value=selected}catch(e){setStatus("error",e instanceof Error?e.message:String(e))}});
+    document.getElementById("check-update").addEventListener("click",async()=>{try{setStatus("",t("working"));const response=await fetch("https://api.github.com/repos/SnowTimSwiss/TimENC/releases/latest",{headers:{"Accept":"application/vnd.github+json"}});if(!response.ok)throw new Error("Update check failed.");const release=await response.json();const latest=(release.tag_name||"").replace(/^v/,"");const message=latest&&latest!==CURRENT_VERSION?`Update available: ${latest}\n${release.html_url||""}`:`You are on the latest known version (${CURRENT_VERSION}).`;setStatus("success",message);setResult(message)}catch(e){const message=e instanceof Error?e.message:String(e);setStatus("error",message);setResult(message)}});
+    document.getElementById("encrypt-form").addEventListener("submit",e=>{e.preventDefault();const btn=e.currentTarget.querySelector(".action"),d=new FormData(e.currentTarget);runForm(btn,()=>invoke("encrypt_file",{request:{input_path:d.get("input"),output_path:d.get("output"),password:d.get("password"),keyfile_path:d.get("keyfile")||null,delete_source:document.getElementById("enc-delete").checked}}))});
+    document.getElementById("decrypt-form").addEventListener("submit",e=>{e.preventDefault();const btn=e.currentTarget.querySelector(".action"),d=new FormData(e.currentTarget);runForm(btn,()=>invoke("decrypt_file",{request:{input_path:d.get("input"),output_dir:d.get("output"),password:d.get("password"),keyfile_path:d.get("keyfile")||null,delete_source:document.getElementById("dec-delete").checked}}))});
+    document.getElementById("keyfile-form").addEventListener("submit",e=>{e.preventDefault();const btn=e.currentTarget.querySelector(".action"),d=new FormData(e.currentTarget);runForm(btn,async()=>{const r=await invoke("create_keyfile",{output_path:d.get("output")});if(r&&r.success!==false&&d.get("output")){document.getElementById("enc-keyfile").value=d.get("output");document.getElementById("dec-keyfile").value=d.get("output")}return r})});
+    languageSelect.addEventListener("change",()=>setLanguage(languageSelect.value));
+    const webviewApi=getWebviewApi();
+    if(webviewApi&&typeof webviewApi.getCurrentWebview==="function"){
+      webviewApi.getCurrentWebview().onDragDropEvent((event)=>{if(event.payload&&event.payload.type==="drop"&&event.payload.paths&&event.payload.paths.length){applyDroppedPath(event.payload.paths[0])}});
+    }
+    const eventApi=getEventApi();
+    if(eventApi&&typeof eventApi.listen==="function"){
+      eventApi.listen("timenc://open-file",event=>{if(event.payload&&event.payload.path)handleOpenedTimenc(event.payload.path)});
+    }
+    document.addEventListener("dragover",e=>e.preventDefault());
+    document.addEventListener("drop",e=>{e.preventDefault();const files=e.dataTransfer&&e.dataTransfer.files;if(files&&files.length){const candidate=files[0].path||files[0].name;if(candidate)applyDroppedPath(candidate)}});
+    applyTranslations();
+    invoke("get_launch_context",{}).then(ctx=>{if(ctx&&ctx.pending_open_file)handleOpenedTimenc(ctx.pending_open_file)}).catch(()=>{});
+    suggestEnc();suggestDec();
+  </script>
 </body>
 </html>

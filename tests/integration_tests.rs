@@ -1,6 +1,7 @@
 //! Integration tests for encrypt/decrypt roundtrip
 
 use std::fs;
+use std::io::Cursor;
 use std::io::Write;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -203,4 +204,142 @@ fn test_keyfile_already_exists() {
     // Try to generate keyfile at same path
     let result = generate_keyfile(&keyfile_path);
     assert!(result.is_err());
+}
+
+#[test]
+fn test_decrypt_rejects_header_filename_traversal() {
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let encrypted_path = temp_dir.path().join("evil.timenc");
+    let output_dir = temp_dir.path().join("out");
+
+    let salt = timenc::crypto::generate_salt();
+    let nonce = timenc::crypto::generate_nonce();
+    let header = timenc::format::Header::new_v3("../evil.txt".to_string(), false, salt, nonce);
+
+    let mut encrypted = Vec::new();
+    timenc::format::v3::encrypt_streaming(
+        &mut Cursor::new(b"payload".to_vec()),
+        &mut encrypted,
+        &header,
+        b"password",
+        None,
+    )
+    .expect("encryption should succeed");
+
+    fs::write(&encrypted_path, encrypted).expect("Failed to write encrypted file");
+
+    let result = decrypt(
+        &encrypted_path,
+        DecryptOptions {
+            password: "password".to_string(),
+            keyfile_path: None,
+            output_dir: output_dir.clone(),
+            delete_source: false,
+        },
+    );
+
+    assert!(result.is_err());
+    assert!(!temp_dir.path().join("evil.txt").exists());
+}
+
+#[test]
+fn test_decrypt_rejects_tar_traversal_entries() {
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let tar_path = temp_dir.path().join("payload.tar");
+    let encrypted_path = temp_dir.path().join("payload.timenc");
+    let output_dir = temp_dir.path().join("out");
+
+    let tar_file = fs::File::create(&tar_path).expect("Failed to create tar");
+    let mut builder = tar::Builder::new(tar_file);
+    let data = b"owned".to_vec();
+    let mut header = tar::Header::new_gnu();
+    header.set_size(data.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    builder
+        .append_data(&mut header, "safe.txt", Cursor::new(data))
+        .expect("Failed to append tar data");
+    builder.finish().expect("Failed to finish tar");
+
+    let mut tar_bytes = fs::read(&tar_path).expect("Failed to read tar bytes");
+    let malicious_name = b"../escape.txt";
+    tar_bytes[..100].fill(0);
+    tar_bytes[..malicious_name.len()].copy_from_slice(malicious_name);
+    tar_bytes[148..156].fill(b' ');
+    let checksum: u32 = tar_bytes[..512].iter().map(|&byte| byte as u32).sum();
+    let checksum_octal = format!("{checksum:06o}\0 ");
+    tar_bytes[148..156].copy_from_slice(checksum_octal.as_bytes());
+    fs::write(&tar_path, tar_bytes).expect("Failed to rewrite tar bytes");
+
+    let salt = timenc::crypto::generate_salt();
+    let nonce = timenc::crypto::generate_nonce();
+    let header = timenc::format::Header::new_v3("archive".to_string(), true, salt, nonce);
+
+    let mut encrypted = Vec::new();
+    timenc::format::v3::encrypt_streaming(
+        &mut fs::File::open(&tar_path).expect("Failed to open tar"),
+        &mut encrypted,
+        &header,
+        b"password",
+        None,
+    )
+    .expect("encryption should succeed");
+
+    fs::write(&encrypted_path, encrypted).expect("Failed to write encrypted file");
+
+    let result = decrypt(
+        &encrypted_path,
+        DecryptOptions {
+            password: "password".to_string(),
+            keyfile_path: None,
+            output_dir: output_dir.clone(),
+            delete_source: false,
+        },
+    );
+
+    assert!(result.is_err());
+    assert!(!temp_dir.path().join("escape.txt").exists());
+}
+
+#[test]
+fn test_decrypt_uses_header_argon2_parameters() {
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let encrypted_path = temp_dir.path().join("custom.timenc");
+    let output_dir = temp_dir.path().join("out");
+
+    let mut header = timenc::format::Header::new_v3(
+        "custom.txt".to_string(),
+        false,
+        timenc::crypto::generate_salt(),
+        timenc::crypto::generate_nonce(),
+    );
+    header.time_cost = 2;
+    header.memory_kib = 32 * 1024;
+    header.parallelism = 1;
+
+    let mut encrypted = Vec::new();
+    timenc::format::v3::encrypt_streaming(
+        &mut Cursor::new(b"custom-params".to_vec()),
+        &mut encrypted,
+        &header,
+        b"password",
+        None,
+    )
+    .expect("encryption should succeed");
+
+    fs::write(&encrypted_path, encrypted).expect("Failed to write encrypted file");
+
+    let result_path = decrypt(
+        &encrypted_path,
+        DecryptOptions {
+            password: "password".to_string(),
+            keyfile_path: None,
+            output_dir,
+            delete_source: false,
+        },
+    )
+    .expect("decryption should succeed");
+
+    let decrypted = fs::read(result_path).expect("Failed to read decrypted file");
+    assert_eq!(decrypted, b"custom-params");
 }
