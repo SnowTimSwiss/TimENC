@@ -47,6 +47,9 @@ pub const FORMAT_VERSION: u8 = 3;
 pub fn derive_key(
     password: &[u8],
     salt: &[u8],
+    time_cost: u32,
+    memory_kib: u32,
+    parallelism: u32,
     keyfile_bytes: Option<&[u8]>,
 ) -> Zeroizing<[u8; KEY_LEN]> {
     // Combine password with keyfile if present
@@ -60,9 +63,9 @@ pub fn derive_key(
 
     // Create Argon2id instance with v3 parameters
     let params = Params::new(
-        ARGON2_MEMORY_KIB,
-        ARGON2_TIME_COST,
-        ARGON2_PARALLELISM,
+        memory_kib,
+        time_cost,
+        parallelism,
         Some(KEY_LEN),
     ).expect("Valid Argon2 parameters");
 
@@ -74,6 +77,22 @@ pub fn derive_key(
         .expect("Key derivation failed");
 
     key
+}
+
+/// Derives a key using the default TimENC v3 Argon2 parameters.
+pub fn derive_key_v3(
+    password: &[u8],
+    salt: &[u8],
+    keyfile_bytes: Option<&[u8]>,
+) -> Zeroizing<[u8; KEY_LEN]> {
+    derive_key(
+        password,
+        salt,
+        ARGON2_TIME_COST,
+        ARGON2_MEMORY_KIB,
+        ARGON2_PARALLELISM,
+        keyfile_bytes,
+    )
 }
 
 /// Generates a random salt

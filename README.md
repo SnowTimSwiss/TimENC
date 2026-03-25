@@ -19,8 +19,8 @@ It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation fo
 * **Tamper-resistant headers** (AAD authentication)
 * **Protection against tar path traversal**
 * **Secure memory handling** (zeroize on drop)
-* **Optional secure deletion of source files**
-* **Modern, user-friendly GUI (Tauri)**
+* **Optional best-effort overwrite before deleting source files**
+* **Cross-platform desktop GUI (Tauri)**
 * **Cross-platform**: Windows, macOS, Linux
 * **Small binaries** (~10MB vs ~100MB Python version)
 

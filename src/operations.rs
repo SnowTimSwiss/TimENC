@@ -3,8 +3,9 @@
 use crate::crypto;
 use crate::error::{Error, Result};
 use crate::format::{self, Header};
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, Write};
+use std::path::Component;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
@@ -100,7 +101,7 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
         if is_dir {
             fs::remove_dir_all(input_path)?;
         } else {
-            fs::remove_file(input_path)?;
+            best_effort_secure_delete_file(input_path)?;
         }
     }
 
@@ -126,10 +127,7 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
 
     // Read header
     let mut file = File::open(input_path)?;
-    let mut header_bytes = Vec::new();
-    file.read_to_end(&mut header_bytes)?;
-
-    let (header, header_len) = Header::from_bytes(&header_bytes)?;
+    let (header, header_len) = Header::read_from(&mut file)?;
 
     // Read keyfile if provided
     let keyfile_bytes = if let Some(ref keyfile_path) = options.keyfile_path {
@@ -146,6 +144,9 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
     match header.version {
         2 => {
             // V2: All ciphertext after header
+            let mut header_bytes = Vec::new();
+            file.seek(std::io::SeekFrom::Start(0))?;
+            file.read_to_end(&mut header_bytes)?;
             let ciphertext = &header_bytes[header_len..];
             let plaintext = format::v2::decrypt(
                 ciphertext,
@@ -158,12 +159,9 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
         }
         3 => {
             // V3: Streaming decryption
-            let mut input_file = File::open(input_path)?;
-            input_file.seek(std::io::SeekFrom::Start(header_len as u64))?;
-
             let mut temp_file_handle = File::create(&temp_path)?;
             format::v3::decrypt_streaming(
-                &mut input_file,
+                &mut file,
                 &mut temp_file_handle,
                 &header,
                 options.password.as_bytes(),
@@ -180,24 +178,24 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
         // Extract TAR archive
         let tar_file = File::open(&temp_path)?;
         let mut tar_archive = tar::Archive::new(tar_file);
+        tar_archive.set_overwrite(false);
         
         for entry in tar_archive.entries()? {
             let mut entry = entry?;
             let entry_path = entry.path()?;
-            
-            // Check for path traversal
-            let full_path = options.output_dir.join(entry_path);
-            if !full_path.starts_with(&options.output_dir) {
+            if has_unsafe_path_components(&entry_path) {
                 return Err(Error::PathTraversal);
             }
-            
-            entry.unpack(&full_path)?;
+            if !entry.unpack_in(&options.output_dir)? {
+                return Err(Error::PathTraversal);
+            }
         }
         
         options.output_dir.clone()
     } else {
         // Single file
-        let target_path = options.output_dir.join(&header.original_name);
+        let safe_name = format::sanitize_output_name(&header.original_name)?;
+        let target_path = options.output_dir.join(safe_name);
         
         if target_path.exists() {
             return Err(Error::FileExists {
@@ -211,7 +209,7 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
 
     // Delete source .timenc file if requested
     if options.delete_source {
-        fs::remove_file(input_path)?;
+        best_effort_secure_delete_file(input_path)?;
     }
 
     Ok(result_path)
@@ -238,4 +236,41 @@ pub fn generate_keyfile(output_path: &Path) -> Result<PathBuf> {
     file.sync_all()?;
 
     Ok(output_path.to_path_buf())
+}
+
+fn best_effort_secure_delete_file(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let len = fs::metadata(path)?.len();
+    let mut file = OpenOptions::new().write(true).open(path)?;
+    let zeros = [0u8; 64 * 1024];
+    let mut remaining = len;
+
+    while remaining > 0 {
+        let chunk = remaining.min(zeros.len() as u64) as usize;
+        file.write_all(&zeros[..chunk])?;
+        remaining -= chunk as u64;
+    }
+
+    file.flush()?;
+    file.sync_all()?;
+    drop(file);
+    fs::remove_file(path)?;
+    Ok(())
+}
+
+fn has_unsafe_path_components(path: &Path) -> bool {
+    let mut has_normal = false;
+
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => has_normal = true,
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return true,
+        }
+    }
+
+    !has_normal
 }

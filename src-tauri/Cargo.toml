@@ -20,6 +20,9 @@ serde_json = "1.0"
 timenc = { path = ".." }
 tokio = { version = "1.35", features = ["full"] }
 
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

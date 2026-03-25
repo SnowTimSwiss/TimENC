@@ -3,6 +3,7 @@
 use crate::crypto::{self, NONCE_SIZE, SALT_SIZE, TAG_SIZE};
 use crate::error::{Error, Result};
 use std::io::{self, Read, Write};
+use std::path::Path;
 
 /// Chunk size for streaming encryption (64 KiB)
 pub const CHUNK_SIZE: usize = 64 * 1024;
@@ -156,6 +157,68 @@ impl Header {
         }, offset))
     }
 
+    /// Reads and parses the header from a reader without buffering the whole file.
+    pub fn read_from<R: Read>(reader: &mut R) -> Result<(Self, usize)> {
+        let mut fixed = [0u8; 10];
+        reader.read_exact(&mut fixed)?;
+
+        if &fixed[0..6] != crypto::MAGIC {
+            return Err(Error::InvalidFormat);
+        }
+
+        let version = fixed[6];
+        let is_dir = fixed[7] == 1;
+        let name_len = u16::from_be_bytes([fixed[8], fixed[9]]) as usize;
+
+        let mut variable = vec![0u8; name_len + SALT_SIZE + 4 + 4 + 1 + NONCE_SIZE];
+        reader.read_exact(&mut variable)?;
+
+        let original_name = String::from_utf8(variable[0..name_len].to_vec())?;
+        let mut offset = name_len;
+
+        let salt: [u8; SALT_SIZE] = variable[offset..offset + SALT_SIZE]
+            .try_into()
+            .map_err(|_| Error::InvalidFormat)?;
+        offset += SALT_SIZE;
+
+        let time_cost = u32::from_be_bytes([
+            variable[offset],
+            variable[offset + 1],
+            variable[offset + 2],
+            variable[offset + 3],
+        ]);
+        offset += 4;
+
+        let memory_kib = u32::from_be_bytes([
+            variable[offset],
+            variable[offset + 1],
+            variable[offset + 2],
+            variable[offset + 3],
+        ]);
+        offset += 4;
+
+        let parallelism = variable[offset] as u32;
+        offset += 1;
+
+        let nonce: [u8; NONCE_SIZE] = variable[offset..offset + NONCE_SIZE]
+            .try_into()
+            .map_err(|_| Error::InvalidFormat)?;
+
+        Ok((
+            Header {
+                version,
+                is_dir,
+                original_name,
+                salt,
+                time_cost,
+                memory_kib,
+                parallelism,
+                nonce,
+            },
+            fixed.len() + variable.len(),
+        ))
+    }
+
     /// Creates a new header for v3 encryption
     pub fn new_v3(original_name: String, is_dir: bool, salt: [u8; SALT_SIZE], nonce: [u8; NONCE_SIZE]) -> Self {
         Header {
@@ -171,6 +234,17 @@ impl Header {
     }
 }
 
+pub fn sanitize_output_name(name: &str) -> Result<&str> {
+    let path = Path::new(name);
+    let mut components = path.components();
+    match (components.next(), components.next()) {
+        (Some(std::path::Component::Normal(component)), None) if !component.is_empty() => {
+            Ok(name)
+        }
+        _ => Err(Error::PathTraversal),
+    }
+}
+
 /// V2 format handler (legacy - single-shot decryption only)
 pub mod v2 {
     use super::*;
@@ -182,7 +256,14 @@ pub mod v2 {
         password: &[u8],
         keyfile_bytes: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
-        let key = crate::crypto::derive_key(password, &header.salt, keyfile_bytes);
+        let key = crate::crypto::derive_key(
+            password,
+            &header.salt,
+            header.time_cost,
+            header.memory_kib,
+            header.parallelism,
+            keyfile_bytes,
+        );
         let header_bytes = header.to_bytes()?;
 
         // V2: Encrypt everything
@@ -200,7 +281,14 @@ pub mod v2 {
         password: &[u8],
         keyfile_bytes: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
-        let key = crate::crypto::derive_key(password, &header.salt, keyfile_bytes);
+        let key = crate::crypto::derive_key(
+            password,
+            &header.salt,
+            header.time_cost,
+            header.memory_kib,
+            header.parallelism,
+            keyfile_bytes,
+        );
         let header_bytes = header.to_bytes()?;
 
         // V2: Decrypt all ciphertext
@@ -237,7 +325,14 @@ pub mod v3 {
         password: &[u8],
         keyfile_bytes: Option<&[u8]>,
     ) -> Result<()> {
-        let key = crate::crypto::derive_key(password, &header.salt, keyfile_bytes);
+        let key = crate::crypto::derive_key(
+            password,
+            &header.salt,
+            header.time_cost,
+            header.memory_kib,
+            header.parallelism,
+            keyfile_bytes,
+        );
         let header_bytes = header.to_bytes()?;
 
         // Write header
@@ -285,7 +380,14 @@ pub mod v3 {
         password: &[u8],
         keyfile_bytes: Option<&[u8]>,
     ) -> Result<()> {
-        let key = crate::crypto::derive_key(password, &header.salt, keyfile_bytes);
+        let key = crate::crypto::derive_key(
+            password,
+            &header.salt,
+            header.time_cost,
+            header.memory_kib,
+            header.parallelism,
+            keyfile_bytes,
+        );
         let header_bytes = header.to_bytes()?;
 
         // Convert nonce to integer for incrementing (96-bit nonce = 12 bytes)
