@@ -1,9 +1,10 @@
-//! TIMENC file format handling (v2 and v3)
+//! TIMENC file format handling (v2, v3, and v4)
 
 use crate::crypto::{self, NONCE_SIZE, SALT_SIZE, TAG_SIZE};
 use crate::error::{Error, Result};
 use std::io::{self, Read, Write};
 use std::path::Path;
+use zeroize::Zeroizing;
 
 /// Chunk size for streaming encryption (64 KiB)
 pub const CHUNK_SIZE: usize = 64 * 1024;
@@ -242,6 +243,383 @@ pub fn sanitize_output_name(name: &str) -> Result<&str> {
             Ok(name)
         }
         _ => Err(Error::PathTraversal),
+    }
+}
+
+/// V4 format handler with encrypted metadata and separated metadata/data contexts.
+pub mod v4 {
+    use super::*;
+
+    /// Current v4 encryption format version.
+    pub const FORMAT_VERSION_V4: u8 = 4;
+
+    /// Stronger v4 Argon2 defaults.
+    pub const ARGON2_V4_TIME_COST: u32 = 3;
+    pub const ARGON2_V4_MEMORY_KIB: u32 = 262_144; // 256 MiB
+    pub const ARGON2_V4_PARALLELISM: u32 = 4;
+
+    /// Encrypted metadata for v4 files.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Metadata {
+        pub is_dir: bool,
+        pub original_name: String,
+    }
+
+    /// Public v4 header. Filename and directory flag live in encrypted metadata.
+    #[derive(Debug, Clone)]
+    pub struct Header {
+        pub version: u8,
+        pub salt: [u8; SALT_SIZE],
+        pub time_cost: u32,
+        pub memory_kib: u32,
+        pub parallelism: u32,
+        pub metadata_nonce: [u8; NONCE_SIZE],
+        pub data_nonce: [u8; NONCE_SIZE],
+        pub metadata_len: u32,
+    }
+
+    fn build_aad(label: &[u8], header_bytes: &[u8]) -> Vec<u8> {
+        let mut aad = Vec::with_capacity(label.len() + header_bytes.len());
+        aad.extend_from_slice(label);
+        aad.extend_from_slice(header_bytes);
+        aad
+    }
+
+    fn read_chunk<R: Read>(input: &mut R, buffer: &mut [u8]) -> io::Result<usize> {
+        let mut total = 0;
+
+        while total < buffer.len() {
+            match input.read(&mut buffer[total..])? {
+                0 => break,
+                n => total += n,
+            }
+        }
+
+        Ok(total)
+    }
+
+    impl Metadata {
+        pub fn new(original_name: String, is_dir: bool) -> Self {
+            Self {
+                is_dir,
+                original_name,
+            }
+        }
+
+        pub fn to_bytes(&self) -> Result<Vec<u8>> {
+            let name_bytes = self.original_name.as_bytes();
+            if name_bytes.len() > u16::MAX as usize {
+                return Err(Error::FilenameTooLong);
+            }
+
+            let mut buf = Vec::with_capacity(1 + 2 + name_bytes.len());
+            buf.push(if self.is_dir { 1 } else { 0 });
+            buf.extend_from_slice(&(name_bytes.len() as u16).to_be_bytes());
+            buf.extend_from_slice(name_bytes);
+            Ok(buf)
+        }
+
+        pub fn from_bytes(data: &[u8]) -> Result<Self> {
+            if data.len() < 3 {
+                return Err(Error::InvalidFormat);
+            }
+
+            let is_dir = match data[0] {
+                0 => false,
+                1 => true,
+                _ => return Err(Error::InvalidFormat),
+            };
+
+            let name_len = u16::from_be_bytes([data[1], data[2]]) as usize;
+            if data.len() < 3 + name_len {
+                return Err(Error::InvalidFormat);
+            }
+
+            let original_name = String::from_utf8(data[3..3 + name_len].to_vec())?;
+            Ok(Self {
+                is_dir,
+                original_name,
+            })
+        }
+    }
+
+    impl Header {
+        pub fn new(
+            metadata_len: u32,
+            salt: [u8; SALT_SIZE],
+            metadata_nonce: [u8; NONCE_SIZE],
+            data_nonce: [u8; NONCE_SIZE],
+        ) -> Self {
+            Self {
+                version: FORMAT_VERSION_V4,
+                salt,
+                time_cost: ARGON2_V4_TIME_COST,
+                memory_kib: ARGON2_V4_MEMORY_KIB,
+                parallelism: ARGON2_V4_PARALLELISM,
+                metadata_nonce,
+                data_nonce,
+                metadata_len,
+            }
+        }
+
+        pub fn to_bytes(&self) -> Result<Vec<u8>> {
+            let mut buf = Vec::with_capacity(
+                6 + 1 + SALT_SIZE + 4 + 4 + 4 + NONCE_SIZE + NONCE_SIZE + 4,
+            );
+            buf.extend_from_slice(crypto::MAGIC);
+            buf.push(self.version);
+            buf.extend_from_slice(&self.salt);
+            buf.extend_from_slice(&self.time_cost.to_be_bytes());
+            buf.extend_from_slice(&self.memory_kib.to_be_bytes());
+            buf.extend_from_slice(&self.parallelism.to_be_bytes());
+            buf.extend_from_slice(&self.metadata_nonce);
+            buf.extend_from_slice(&self.data_nonce);
+            buf.extend_from_slice(&self.metadata_len.to_be_bytes());
+            Ok(buf)
+        }
+
+        pub fn from_bytes(data: &[u8]) -> Result<(Self, usize)> {
+            let expected_len = 6 + 1 + SALT_SIZE + 4 + 4 + 4 + NONCE_SIZE + NONCE_SIZE + 4;
+            if data.len() < expected_len {
+                return Err(Error::InvalidFormat);
+            }
+
+            if &data[0..6] != crypto::MAGIC {
+                return Err(Error::InvalidFormat);
+            }
+
+            let mut offset = 6;
+            let version = data[offset];
+            offset += 1;
+            if version != FORMAT_VERSION_V4 {
+                return Err(Error::InvalidFormat);
+            }
+
+            let salt: [u8; SALT_SIZE] = data[offset..offset + SALT_SIZE]
+                .try_into()
+                .map_err(|_| Error::InvalidFormat)?;
+            offset += SALT_SIZE;
+
+            let time_cost = u32::from_be_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]);
+            offset += 4;
+
+            let memory_kib = u32::from_be_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]);
+            offset += 4;
+
+            let parallelism = u32::from_be_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]);
+            offset += 4;
+
+            let metadata_nonce: [u8; NONCE_SIZE] = data[offset..offset + NONCE_SIZE]
+                .try_into()
+                .map_err(|_| Error::InvalidFormat)?;
+            offset += NONCE_SIZE;
+
+            let data_nonce: [u8; NONCE_SIZE] = data[offset..offset + NONCE_SIZE]
+                .try_into()
+                .map_err(|_| Error::InvalidFormat)?;
+            offset += NONCE_SIZE;
+
+            let metadata_len = u32::from_be_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]);
+            offset += 4;
+
+            Ok((
+                Self {
+                    version,
+                    salt,
+                    time_cost,
+                    memory_kib,
+                    parallelism,
+                    metadata_nonce,
+                    data_nonce,
+                    metadata_len,
+                },
+                offset,
+            ))
+        }
+
+        pub fn read_from<R: Read>(reader: &mut R) -> Result<(Self, usize)> {
+            let mut fixed = vec![0u8; 6 + 1 + SALT_SIZE + 4 + 4 + 4 + NONCE_SIZE + NONCE_SIZE + 4];
+            reader.read_exact(&mut fixed)?;
+            Self::from_bytes(&fixed)
+        }
+    }
+
+    fn derive_key_v4(
+        password: &[u8],
+        salt: &[u8],
+        keyfile_bytes: Option<&[u8]>,
+    ) -> Zeroizing<[u8; crate::crypto::KEY_LEN]> {
+        let mut secret = Zeroizing::new(Vec::with_capacity(
+            password.len() + keyfile_bytes.map_or(0, |keyfile| keyfile.len()) + 32,
+        ));
+        secret.extend_from_slice(b"TIMENC-v4|password|");
+        secret.extend_from_slice(password);
+        if let Some(keyfile) = keyfile_bytes {
+            secret.extend_from_slice(b"|keyfile|");
+            secret.extend_from_slice(keyfile);
+        }
+
+        crate::crypto::derive_key_from_secret(
+            &secret,
+            salt,
+            ARGON2_V4_TIME_COST,
+            ARGON2_V4_MEMORY_KIB,
+            ARGON2_V4_PARALLELISM,
+        )
+    }
+
+    pub fn encrypt_metadata(
+        metadata: &Metadata,
+        header: &Header,
+        password: &[u8],
+        keyfile_bytes: Option<&[u8]>,
+    ) -> Result<Vec<u8>> {
+        let key = derive_key_v4(password, &header.salt, keyfile_bytes);
+        let header_bytes = header.to_bytes()?;
+        let aad = build_aad(b"TIMENC-v4-metadata", &header_bytes);
+        let plaintext = metadata.to_bytes()?;
+        crate::crypto::encrypt_chunk(&key, &header.metadata_nonce, &plaintext, &aad).map_err(Error::from)
+    }
+
+    pub fn decrypt_metadata(
+        encrypted_metadata: &[u8],
+        header: &Header,
+        password: &[u8],
+        keyfile_bytes: Option<&[u8]>,
+    ) -> Result<Metadata> {
+        let key = derive_key_v4(password, &header.salt, keyfile_bytes);
+        let header_bytes = header.to_bytes()?;
+        let aad = build_aad(b"TIMENC-v4-metadata", &header_bytes);
+        let plaintext = crate::crypto::decrypt_chunk(&key, &header.metadata_nonce, encrypted_metadata, &aad)
+            .map_err(|_| Error::DecryptionFailed)?;
+        Metadata::from_bytes(&plaintext)
+    }
+
+    pub fn encrypt_streaming<R: Read, W: Write>(
+        input: &mut R,
+        output: &mut W,
+        header: &Header,
+        metadata: &Metadata,
+        password: &[u8],
+        keyfile_bytes: Option<&[u8]>,
+    ) -> Result<()> {
+        let key = derive_key_v4(password, &header.salt, keyfile_bytes);
+        let header_bytes = header.to_bytes()?;
+        let metadata_aad = build_aad(b"TIMENC-v4-metadata", &header_bytes);
+        let data_aad = build_aad(b"TIMENC-v4-data", &header_bytes);
+
+        output.write_all(&header_bytes)?;
+
+        let metadata_bytes = metadata.to_bytes()?;
+        let encrypted_metadata = crate::crypto::encrypt_chunk(
+            &key,
+            &header.metadata_nonce,
+            &metadata_bytes,
+            &metadata_aad,
+        )
+        .map_err(Error::from)?;
+        output.write_all(&encrypted_metadata)?;
+
+        let mut nonce_padded = [0u8; 16];
+        nonce_padded[4..].copy_from_slice(&header.data_nonce);
+        let nonce_int = u128::from_be_bytes(nonce_padded);
+
+        let mut chunk_counter: u128 = 0;
+        let mut buffer = [0u8; CHUNK_SIZE];
+
+        loop {
+            let bytes_read = read_chunk(input, &mut buffer)?;
+            if bytes_read == 0 {
+                break;
+            }
+
+            let current_nonce_int = (nonce_int + chunk_counter) % (2u128.pow(96));
+            let current_nonce_bytes = current_nonce_int.to_be_bytes();
+            let current_nonce: [u8; NONCE_SIZE] = current_nonce_bytes[4..]
+                .try_into()
+                .map_err(|_| Error::InvalidFormat)?;
+
+            let ciphertext = crate::crypto::encrypt_chunk(
+                &key,
+                &current_nonce,
+                &buffer[..bytes_read],
+                &data_aad,
+            )
+            .map_err(Error::from)?;
+            output.write_all(&ciphertext)?;
+
+            chunk_counter += 1;
+        }
+
+        Ok(())
+    }
+
+    pub fn decrypt_streaming<R: Read, W: Write>(
+        input: &mut R,
+        output: &mut W,
+        header: &Header,
+        password: &[u8],
+        keyfile_bytes: Option<&[u8]>,
+    ) -> Result<()> {
+        let key = derive_key_v4(password, &header.salt, keyfile_bytes);
+        let header_bytes = header.to_bytes()?;
+        let data_aad = build_aad(b"TIMENC-v4-data", &header_bytes);
+
+        let mut nonce_padded = [0u8; 16];
+        nonce_padded[4..].copy_from_slice(&header.data_nonce);
+        let nonce_int = u128::from_be_bytes(nonce_padded);
+
+        let mut chunk_counter: u128 = 0;
+        let mut encrypted_buffer = [0u8; ENC_CHUNK_SIZE];
+
+        loop {
+            let bytes_read = read_chunk(input, &mut encrypted_buffer)?;
+            if bytes_read == 0 {
+                break;
+            }
+            if bytes_read < TAG_SIZE {
+                return Err(Error::InvalidFormat);
+            }
+
+            let current_nonce_int = (nonce_int + chunk_counter) % (2u128.pow(96));
+            let current_nonce_bytes = current_nonce_int.to_be_bytes();
+            let current_nonce: [u8; NONCE_SIZE] = current_nonce_bytes[4..]
+                .try_into()
+                .map_err(|_| Error::InvalidFormat)?;
+
+            let plaintext = crate::crypto::decrypt_chunk(
+                &key,
+                &current_nonce,
+                &encrypted_buffer[..bytes_read],
+                &data_aad,
+            )
+            .map_err(|_| Error::DecryptionFailed)?;
+            output.write_all(&plaintext)?;
+
+            chunk_counter += 1;
+        }
+
+        Ok(())
     }
 }
 

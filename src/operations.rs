@@ -70,22 +70,25 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
         None
     };
 
-    // Generate salt and nonce
+    // Generate salt and nonces for the v4 header.
     let salt = crypto::generate_salt();
-    let nonce = crypto::generate_nonce();
+    let metadata_nonce = crypto::generate_nonce();
+    let data_nonce = crypto::generate_nonce();
 
-    // Create header
-    let header = Header::new_v3(original_name.clone(), is_dir, salt, nonce);
+    let metadata = format::v4::Metadata::new(original_name.clone(), is_dir);
+    let metadata_len = (metadata.to_bytes()?.len() + crypto::TAG_SIZE) as u32;
+    let header = format::v4::Header::new(metadata_len, salt, metadata_nonce, data_nonce);
 
     // Create output file
     let mut output_file = File::create(&options.output_path)?;
 
-    // Encrypt using V3 streaming format
+    // Encrypt using V4 streaming format
     let mut input_file_handle = File::open(&input_file)?;
-    format::v3::encrypt_streaming(
+    format::v4::encrypt_streaming(
         &mut input_file_handle,
         &mut output_file,
         &header,
+        &metadata,
         options.password.as_bytes(),
         keyfile_bytes.as_deref(),
     )?;
@@ -121,9 +124,14 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
         });
     }
 
-    // Read header
     let mut file = File::open(input_path)?;
-    let (header, header_len) = Header::read_from(&mut file)?;
+    let mut version_bytes = [0u8; 7];
+    file.read_exact(&mut version_bytes)?;
+    if &version_bytes[0..6] != crypto::MAGIC {
+        return Err(Error::InvalidFormat);
+    }
+    let version = version_bytes[6];
+    file.seek(std::io::SeekFrom::Start(0))?;
 
     // Read keyfile if provided
     let keyfile_bytes = if let Some(ref keyfile_path) = options.keyfile_path {
@@ -132,13 +140,13 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
         None
     };
 
-    // Create temporary file for decrypted content
-    let temp_file = NamedTempFile::new()?;
-    let temp_path = temp_file.path().to_path_buf();
-
     // Decrypt based on version
-    match header.version {
+    let result = match version {
         2 => {
+            let (header, header_len) = Header::read_from(&mut file)?;
+            let temp_file = NamedTempFile::new()?;
+            let temp_path = temp_file.path().to_path_buf();
+
             // V2: All ciphertext after header
             let mut header_bytes = Vec::new();
             file.seek(std::io::SeekFrom::Start(0))?;
@@ -152,8 +160,19 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
             )?;
             let mut temp_file_handle = File::create(&temp_path)?;
             temp_file_handle.write_all(&plaintext)?;
+
+            handle_decrypted_output(
+                header.original_name,
+                header.is_dir,
+                &temp_path,
+                &options.output_dir,
+            )
         }
         3 => {
+            let (header, _header_len) = Header::read_from(&mut file)?;
+            let temp_file = NamedTempFile::new()?;
+            let temp_path = temp_file.path().to_path_buf();
+
             // V3: Streaming decryption
             let mut temp_file_handle = File::create(&temp_path)?;
             format::v3::decrypt_streaming(
@@ -163,50 +182,50 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
                 options.password.as_bytes(),
                 keyfile_bytes.as_deref(),
             )?;
-        }
-        _ => return Err(Error::UnsupportedVersion { version: header.version }),
-    }
 
-    // Create output directory
-    fs::create_dir_all(&options.output_dir)?;
+            handle_decrypted_output(
+                header.original_name,
+                header.is_dir,
+                &temp_path,
+                &options.output_dir,
+            )
+        }
+        4 => {
+            let (header, _header_len) = format::v4::Header::read_from(&mut file)?;
+            let mut encrypted_metadata = vec![0u8; header.metadata_len as usize];
+            file.read_exact(&mut encrypted_metadata)?;
+            let metadata = format::v4::decrypt_metadata(
+                &encrypted_metadata,
+                &header,
+                options.password.as_bytes(),
+                keyfile_bytes.as_deref(),
+            )?;
 
-    let result_path = if header.is_dir {
-        // Extract TAR archive
-        let tar_file = File::open(&temp_path)?;
-        let mut tar_archive = tar::Archive::new(tar_file);
-        tar_archive.set_overwrite(false);
-        
-        for entry in tar_archive.entries()? {
-            let mut entry = entry?;
-            let entry_path = entry.path()?;
-            if has_unsafe_path_components(&entry_path) {
-                return Err(Error::PathTraversal);
-            }
-            if !entry.unpack_in(&options.output_dir)? {
-                return Err(Error::PathTraversal);
-            }
+            let temp_file = NamedTempFile::new()?;
+            let temp_path = temp_file.path().to_path_buf();
+            let mut temp_file_handle = File::create(&temp_path)?;
+            format::v4::decrypt_streaming(
+                &mut file,
+                &mut temp_file_handle,
+                &header,
+                options.password.as_bytes(),
+                keyfile_bytes.as_deref(),
+            )?;
+
+            handle_decrypted_output(
+                metadata.original_name,
+                metadata.is_dir,
+                &temp_path,
+                &options.output_dir,
+            )
         }
-        
-        options.output_dir.clone()
-    } else {
-        // Single file
-        let safe_name = format::sanitize_output_name(&header.original_name)?;
-        let target_path = options.output_dir.join(safe_name);
-        
-        if target_path.exists() {
-            return Err(Error::FileExists {
-                path: target_path.to_string_lossy().to_string(),
-            });
-        }
-        
-        fs::rename(&temp_path, &target_path)?;
-        target_path
+        _ => Err(Error::UnsupportedVersion { version }),
     };
 
     // Always delete source .timenc file after decryption
     best_effort_secure_delete_file(input_path)?;
 
-    Ok(result_path)
+    result
 }
 
 /// Generates a new keyfile
@@ -267,4 +286,44 @@ fn has_unsafe_path_components(path: &Path) -> bool {
     }
 
     !has_normal
+}
+
+fn handle_decrypted_output(
+    original_name: String,
+    is_dir: bool,
+    temp_path: &Path,
+    output_dir: &Path,
+) -> Result<PathBuf> {
+    fs::create_dir_all(output_dir)?;
+
+    if is_dir {
+        let tar_file = File::open(temp_path)?;
+        let mut tar_archive = tar::Archive::new(tar_file);
+        tar_archive.set_overwrite(false);
+
+        for entry in tar_archive.entries()? {
+            let mut entry = entry?;
+            let entry_path = entry.path()?;
+            if has_unsafe_path_components(&entry_path) {
+                return Err(Error::PathTraversal);
+            }
+            if !entry.unpack_in(output_dir)? {
+                return Err(Error::PathTraversal);
+            }
+        }
+
+        Ok(output_dir.to_path_buf())
+    } else {
+        let safe_name = format::sanitize_output_name(&original_name)?;
+        let target_path = output_dir.join(safe_name);
+
+        if target_path.exists() {
+            return Err(Error::FileExists {
+                path: target_path.to_string_lossy().to_string(),
+            });
+        }
+
+        fs::rename(temp_path, &target_path)?;
+        Ok(target_path)
+    }
 }

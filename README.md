@@ -5,8 +5,8 @@
 **TimENC** is a modern, cross-platform encryption tool built with Rust and Tauri.
 It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation for strong, authenticated encryption - designed to be secure, simple, and open-source.
 
-> **Version 2.0** - Complete rewrite in Rust for better performance, memory safety, and smaller binaries.
-> Compatible with v2 and v3 format files from the original Python version.
+> **Version 2.1** - Complete rewrite in Rust for better performance, memory safety, and smaller binaries.
+> Encryption default is v4. Decryption stays compatible with v2 and v3 files from the original Python version.
 
 ---
 
@@ -14,8 +14,9 @@ It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation fo
 
 * **Strong encryption** with ChaCha20-Poly1305 (authenticated AEAD)
 * **Secure password-based key derivation** using Argon2id
-* **Keyfile support** for additional entropy
+* **Keyfile support** as an optional second factor
 * **Automatic directory archiving and encryption**
+* **Encrypted metadata** for filenames and directory flags
 * **Tamper-resistant headers** (AAD authentication)
 * **Protection against tar path traversal**
 * **Secure memory handling** (zeroize on drop)
@@ -34,7 +35,7 @@ It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation fo
 | **KDF**            | Argon2id                            | Time-hard and memory-hard, resistant to GPU/ASIC attacks |
 | **Authentication** | Poly1305 MAC                        | Per-chunk authentication                                 |
 | **Keyfile**        | Random 256-bit                      | Optional additional entropy                              |
-| **Key Combo**      | password + "::KEYFILE::" + keyfile  | Before Argon2 derivation                                 |
+| **Key Combo**      | password + optional keyfile         | Explicitly separated inputs before Argon2 derivation     |
 
 ### Default Argon2 Parameters
 
@@ -49,31 +50,39 @@ It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation fo
 ## 🧠 How It Works
 
 1. You select a **file or directory**.
-2. TimENC creates a **temporary TAR archive** (for directories).
-3. It derives a **key** from your password (and optional keyfile) using Argon2id.
-4. The data is encrypted with **ChaCha20-Poly1305** in streaming mode (64 KiB chunks).
-5. The output `.timenc` file contains everything necessary to decrypt.
-6. During decryption, all parameters and metadata are verified before decryption.
+2. TimENC creates a **temporary TAR archive** for directories.
+3. It derives a **key** from your password and optional keyfile using Argon2id.
+4. Metadata is encrypted separately from the payload.
+5. The data is encrypted with **ChaCha20-Poly1305** in streaming mode (64 KiB chunks).
+6. The output `.timenc` file contains the encrypted metadata and payload.
+7. During decryption, metadata and payload are authenticated before use.
 
 ### File Format
 
 ```
-TIMENC Header (v3):
+TIMENC v4:
 ├─ Magic: "TIMENC" (6 bytes)
-├─ Version: 0x03 (1 byte)
-├─ IsDir: 0x00/0x01 (1 byte)
-├─ NameLen: u16 big-endian (2 bytes)
-├─ OriginalName: UTF-8 (variable)
+├─ Version: 0x04 (1 byte)
 ├─ Salt: 16 bytes
 ├─ TimeCost: u32 big-endian (4 bytes)
 ├─ MemoryKiB: u32 big-endian (4 bytes)
-├─ Parallelism: u8 (1 byte)
-└─ Nonce: 12 bytes
+├─ Parallelism: u32 big-endian (4 bytes)
+├─ MetadataNonce: 12 bytes
+├─ DataNonce: 12 bytes
+└─ MetadataLen: u32 big-endian (4 bytes)
 
-Encrypted Chunks:
-├─ Chunk 1: ciphertext + tag (16 bytes)
-├─ Chunk 2: ciphertext + tag (16 bytes)
-└─ ... (64 KiB plaintext per chunk)
+Encrypted Metadata:
+├─ is_dir: 1 byte
+├─ name_len: u16 big-endian
+└─ original_name: UTF-8
+
+Encrypted Payload:
+├─ Metadata ciphertext + tag
+└─ Data chunks: ciphertext + tag (64 KiB plaintext per chunk)
+
+Legacy files:
+├─ v2 and v3 remain decryptable
+└─ v4 is the default encryption format
 ```
 
 ---
@@ -206,10 +215,12 @@ timenc decrypt secret.timenc -o ./decrypted -p "MyPassword" -k ./mykeyfile.key
 |---------|---------------------|-------------------|
 | **V2 Decryption** | ✅ | ✅ |
 | **V3 Decryption** | ✅ | ✅ |
+| **V4 Decryption** | ❌ | ✅ |
 | **V2 Encryption** | ✅ | ❌ (deprecated) |
-| **V3 Encryption** | ✅ | ✅ (default) |
+| **V3 Encryption** | ✅ | ❌ (legacy) |
+| **V4 Encryption** | ❌ | ✅ (default) |
 | **Keyfile Format** | 32 Bytes | 32 Bytes (compatible) |
-| **Argon2 Parameters** | time=4, mem=128MB, parallel=4 | identical |
+| **Argon2 Parameters** | time=4, mem=128MB, parallel=4 | v4 defaults, versioned in header |
 
 ---
 
