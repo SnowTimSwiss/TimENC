@@ -14,7 +14,6 @@ pub struct EncryptRequest {
     output_path: PathBuf,
     password: String,
     keyfile_path: Option<PathBuf>,
-    delete_source: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -23,7 +22,6 @@ pub struct DecryptRequest {
     output_dir: PathBuf,
     password: String,
     keyfile_path: Option<PathBuf>,
-    delete_source: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -74,7 +72,6 @@ async fn encrypt_file(request: EncryptRequest) -> Result<OperationResult, String
         password: request.password,
         keyfile_path: request.keyfile_path,
         output_path: request.output_path,
-        delete_source: request.delete_source,
     };
 
     match encrypt(&request.input_path, options) {
@@ -97,7 +94,6 @@ async fn decrypt_file(request: DecryptRequest) -> Result<OperationResult, String
         password: request.password,
         keyfile_path: request.keyfile_path,
         output_dir: request.output_dir,
-        delete_source: request.delete_source,
     };
 
     match decrypt(&request.input_path, options) {

@@ -31,10 +31,6 @@ enum Commands {
         /// Optional keyfile for additional entropy
         #[arg(short, long)]
         keyfile: Option<PathBuf>,
-
-        /// Delete source file after encryption
-        #[arg(long, default_value_t = false)]
-        delete_source: bool,
     },
 
     /// Decrypt a .timenc file
@@ -53,10 +49,6 @@ enum Commands {
         /// Optional keyfile for decryption
         #[arg(short, long)]
         keyfile: Option<PathBuf>,
-
-        /// Delete source .timenc file after decryption
-        #[arg(long, default_value_t = false)]
-        delete_source: bool,
     },
 
     /// Generate a new keyfile
@@ -75,13 +67,11 @@ fn main() {
             output,
             password,
             keyfile,
-            delete_source,
         } => {
             let options = EncryptOptions {
                 password,
                 keyfile_path: keyfile,
                 output_path: output,
-                delete_source,
             };
             encrypt(&input, options)
                 .map(|_| ())
@@ -92,13 +82,11 @@ fn main() {
             output,
             password,
             keyfile,
-            delete_source,
         } => {
             let options = DecryptOptions {
                 password,
                 keyfile_path: keyfile,
                 output_dir: output,
-                delete_source,
             };
             decrypt(&input, options)
                 .map(|_| ())

@@ -15,7 +15,6 @@ pub struct EncryptOptions {
     pub password: String,
     pub keyfile_path: Option<PathBuf>,
     pub output_path: PathBuf,
-    pub delete_source: bool,
 }
 
 /// Options for decryption
@@ -24,7 +23,6 @@ pub struct DecryptOptions {
     pub password: String,
     pub keyfile_path: Option<PathBuf>,
     pub output_dir: PathBuf,
-    pub delete_source: bool,
 }
 
 /// Encrypts a file or directory
@@ -96,13 +94,11 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
 
     // Secure cleanup of key material happens automatically via Zeroizing
 
-    // Delete source if requested
-    if options.delete_source {
-        if is_dir {
-            fs::remove_dir_all(input_path)?;
-        } else {
-            best_effort_secure_delete_file(input_path)?;
-        }
+    // Always delete source after encryption
+    if is_dir {
+        fs::remove_dir_all(input_path)?;
+    } else {
+        best_effort_secure_delete_file(input_path)?;
     }
 
     // Temp directory is automatically cleaned up when dropped
@@ -207,10 +203,8 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
         target_path
     };
 
-    // Delete source .timenc file if requested
-    if options.delete_source {
-        best_effort_secure_delete_file(input_path)?;
-    }
+    // Always delete source .timenc file after decryption
+    best_effort_secure_delete_file(input_path)?;
 
     Ok(result_path)
 }
