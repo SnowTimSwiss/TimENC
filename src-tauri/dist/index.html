@@ -24,23 +24,25 @@
       padding: 0;
     }
 
+    html, body {
+      min-height: 100%;
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: var(--bg-primary);
       color: var(--text-primary);
       min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
+      padding: 0;
     }
 
     .container {
       width: 100%;
-      max-width: 700px;
+      max-width: none;
+      min-height: 100vh;
       background: var(--bg-secondary);
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      border: none;
+      border-radius: 0;
       overflow: hidden;
     }
 
@@ -308,10 +310,6 @@
     }
 
     @media (max-width: 600px) {
-      .container {
-        border-radius: 0;
-      }
-      
       .header {
         padding: 16px 20px;
       }
@@ -726,6 +724,15 @@
       const idx = Math.max(norm.lastIndexOf("\\"), norm.lastIndexOf("/"));
       return idx >= 0 ? norm.slice(0, idx) : ".";
     }
+
+    function getFieldValue(id) {
+      return document.getElementById(id).value.trim();
+    }
+
+    function getOptionalFieldValue(id) {
+      const value = getFieldValue(id);
+      return value || null;
+    }
     
     function updateTranslations() {
       languageSelect.value = currentLang;
@@ -987,26 +994,38 @@
     document.getElementById("encrypt-form").addEventListener("submit", e => {
       e.preventDefault();
       const btn = e.currentTarget.querySelector(".btn-primary");
-      const d = new FormData(e.currentTarget);
-      runForm(btn, () => invoke("encrypt_file", { request: { input_path: d.get("input"), output_path: d.get("output"), password: d.get("password"), keyfile_path: d.get("keyfile") || null, delete_source: true } }));
+      runForm(btn, () => invoke("encrypt_file", {
+        request: {
+          input_path: getFieldValue("enc-input"),
+          output_path: getFieldValue("enc-output"),
+          password: getFieldValue("enc-password"),
+          keyfile_path: getOptionalFieldValue("enc-keyfile")
+        }
+      }));
     });
     
     document.getElementById("decrypt-form").addEventListener("submit", e => {
       e.preventDefault();
       const btn = e.currentTarget.querySelector(".btn-success");
-      const d = new FormData(e.currentTarget);
-      runForm(btn, () => invoke("decrypt_file", { request: { input_path: d.get("input"), output_dir: d.get("output"), password: d.get("password"), keyfile_path: d.get("keyfile") || null, delete_source: true } }));
+      runForm(btn, () => invoke("decrypt_file", {
+        request: {
+          input_path: getFieldValue("dec-input"),
+          output_dir: getFieldValue("dec-output"),
+          password: getFieldValue("dec-password"),
+          keyfile_path: getOptionalFieldValue("dec-keyfile")
+        }
+      }));
     });
     
     document.getElementById("keyfile-form").addEventListener("submit", e => {
       e.preventDefault();
       const btn = e.currentTarget.querySelector(".btn-primary");
-      const d = new FormData(e.currentTarget);
       runForm(btn, async () => {
-        const r = await invoke("create_keyfile", { output_path: d.get("output") });
-        if (r && r.success !== false && d.get("output")) {
-          document.getElementById("enc-keyfile").value = d.get("output");
-          document.getElementById("dec-keyfile").value = d.get("output");
+        const outputPath = getFieldValue("keyfile-output");
+        const r = await invoke("create_keyfile", { output_path: outputPath });
+        if (r && r.success !== false && outputPath) {
+          document.getElementById("enc-keyfile").value = outputPath;
+          document.getElementById("dec-keyfile").value = outputPath;
         }
         return r;
       });
