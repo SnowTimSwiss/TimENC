@@ -1,6 +1,6 @@
 //! TimENC Core Library - Secure encryption with ChaCha20-Poly1305 and Argon2id
 //! 
-//! This library provides encryption/decryption compatible with TimENC v2, v3, and v4 formats.
+//! This library provides encryption/decryption compatible with TimENC v3 and v4 formats.
 
 pub mod crypto;
 pub mod format;

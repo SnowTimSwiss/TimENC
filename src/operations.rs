@@ -142,32 +142,6 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
 
     // Decrypt based on version
     let result = match version {
-        2 => {
-            let (header, header_len) = Header::read_from(&mut file)?;
-            let temp_file = NamedTempFile::new()?;
-            let temp_path = temp_file.path().to_path_buf();
-
-            // V2: All ciphertext after header
-            let mut header_bytes = Vec::new();
-            file.seek(std::io::SeekFrom::Start(0))?;
-            file.read_to_end(&mut header_bytes)?;
-            let ciphertext = &header_bytes[header_len..];
-            let plaintext = format::v2::decrypt(
-                ciphertext,
-                &header,
-                options.password.as_bytes(),
-                keyfile_bytes.as_deref(),
-            )?;
-            let mut temp_file_handle = File::create(&temp_path)?;
-            temp_file_handle.write_all(&plaintext)?;
-
-            handle_decrypted_output(
-                header.original_name,
-                header.is_dir,
-                &temp_path,
-                &options.output_dir,
-            )
-        }
         3 => {
             let (header, _header_len) = Header::read_from(&mut file)?;
             let temp_file = NamedTempFile::new()?;
