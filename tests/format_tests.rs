@@ -175,7 +175,7 @@ fn test_v3_streaming_roundtrip_with_fragmented_reads() {
 }
 
 #[test]
-fn test_v3_decrypt_rejects_tampered_header() {
+fn test_v3_decrypt_rejects_tampered_ciphertext() {
     let salt = crypto::generate_salt();
     let nonce = crypto::generate_nonce();
     let header = Header::new_v3("original.txt".to_string(), false, salt, nonce);
@@ -192,16 +192,14 @@ fn test_v3_decrypt_rejects_tampered_header() {
     )
     .expect("encryption should succeed");
 
-    let mut tampered_header = header.clone();
-    tampered_header.original_name = "evil.txt".to_string();
-
     let header_len = header.to_bytes().expect("header bytes").len();
-    let ciphertext = encrypted[header_len..].to_vec();
+    let mut ciphertext = encrypted[header_len..].to_vec();
+    ciphertext[0] ^= 0x01;
 
     let result = timenc::format::v3::decrypt_streaming(
         &mut Cursor::new(ciphertext),
         &mut Vec::new(),
-        &tampered_header,
+        &header,
         password,
         None,
     );

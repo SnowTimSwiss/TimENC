@@ -357,3 +357,46 @@ fn test_decrypt_uses_header_argon2_parameters() {
     let decrypted = fs::read(result_path).expect("Failed to read decrypted file");
     assert_eq!(decrypted, b"custom-params");
 }
+
+#[test]
+fn test_decrypt_python_v3_file() {
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let encrypted_path = temp_dir.path().join("python-v3.timenc");
+    let output_dir = temp_dir.path().join("out");
+
+    let header = timenc::format::Header::new_v3(
+        "legacy.txt".to_string(),
+        false,
+        timenc::crypto::generate_salt(),
+        timenc::crypto::generate_nonce(),
+    );
+    let key = timenc::crypto::derive_key(
+        b"password",
+        &header.salt,
+        header.time_cost,
+        header.memory_kib,
+        header.parallelism,
+        None,
+    );
+
+    let mut encrypted = header.to_bytes().expect("header serialization should succeed");
+    let plaintext = b"python-v3-compatible";
+    let ciphertext = timenc::crypto::encrypt_chunk(&key, &header.nonce, plaintext, b"")
+        .expect("legacy v3 encryption should succeed");
+    encrypted.extend_from_slice(&ciphertext);
+
+    fs::write(&encrypted_path, encrypted).expect("Failed to write encrypted file");
+
+    let result_path = decrypt(
+        &encrypted_path,
+        DecryptOptions {
+            password: "password".to_string(),
+            keyfile_path: None,
+            output_dir,
+        },
+    )
+    .expect("decryption should succeed");
+
+    let decrypted = fs::read(result_path).expect("Failed to read decrypted file");
+    assert_eq!(decrypted, plaintext);
+}

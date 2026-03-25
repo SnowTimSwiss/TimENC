@@ -5,8 +5,8 @@
 **TimENC** is a modern, cross-platform encryption tool built with Rust and Tauri.
 It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation for strong, authenticated encryption - designed to be secure, simple, and open-source.
 
-> **Version 2.1** - Complete rewrite in Rust for better performance, memory safety, and smaller binaries.
-> Encryption default is v4. Decryption stays compatible with v2 and v3 files from the original Python version.
+> **Version 2.1.1** - Complete rewrite in Rust for better performance, memory safety, and smaller binaries.
+> Encryption default is v4. Decryption stays compatible with v3 and v4 files.
 
 ---
 
@@ -80,8 +80,8 @@ Encrypted Payload:
 ├─ Metadata ciphertext + tag
 └─ Data chunks: ciphertext + tag (64 KiB plaintext per chunk)
 
-Legacy files:
-├─ v2 and v3 remain decryptable
+Supported files:
+├─ v3 remains decryptable
 └─ v4 is the default encryption format
 ```
 
@@ -213,7 +213,7 @@ timenc decrypt secret.timenc -o ./decrypted -p "MyPassword" -k ./mykeyfile.key
 
 | Feature | Python TimENC (v1.x) | Rust TimENC (v2.x) |
 |---------|---------------------|-------------------|
-| **V2 Decryption** | ✅ | ✅ |
+| **V2 Decryption** | ✅ | ❌ |
 | **V3 Decryption** | ✅ | ✅ |
 | **V4 Decryption** | ❌ | ✅ |
 | **V2 Encryption** | ✅ | ❌ (deprecated) |

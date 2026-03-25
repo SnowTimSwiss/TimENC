@@ -1,4 +1,4 @@
-//! TIMENC file format handling (v2, v3, and v4)
+//! TIMENC file format handling (legacy v2 helpers, v3, and v4)
 
 use crate::crypto::{self, NONCE_SIZE, SALT_SIZE, TAG_SIZE};
 use crate::error::{Error, Result};
@@ -623,7 +623,7 @@ pub mod v4 {
     }
 }
 
-/// V2 format handler (legacy - single-shot decryption only)
+/// V2 format handler (legacy helper - no longer used by the app)
 pub mod v2 {
     use super::*;
 
@@ -711,10 +711,8 @@ pub mod v3 {
             header.parallelism,
             keyfile_bytes,
         );
-        let header_bytes = header.to_bytes()?;
-
         // Write header
-        output.write_all(&header_bytes)?;
+        output.write_all(&header.to_bytes()?)?;
 
         // Convert nonce to integer for incrementing (96-bit nonce = 12 bytes)
         // We use big-endian and pad with 4 zero bytes at the front to make 16 bytes (u128)
@@ -738,7 +736,7 @@ pub mod v3 {
                 .map_err(|_| Error::InvalidFormat)?;
 
             // Encrypt chunk
-            let ciphertext = crate::crypto::encrypt_chunk(&key, &current_nonce, &buffer[..bytes_read], &header_bytes)
+            let ciphertext = crate::crypto::encrypt_chunk(&key, &current_nonce, &buffer[..bytes_read], b"")
                 .map_err(Error::from)?;
             output.write_all(&ciphertext)?;
 
@@ -766,8 +764,6 @@ pub mod v3 {
             header.parallelism,
             keyfile_bytes,
         );
-        let header_bytes = header.to_bytes()?;
-
         // Convert nonce to integer for incrementing (96-bit nonce = 12 bytes)
         let mut nonce_padded = [0u8; 16];
         nonce_padded[4..].copy_from_slice(&header.nonce);
@@ -792,7 +788,7 @@ pub mod v3 {
                 .map_err(|_| Error::InvalidFormat)?;
 
             // Decrypt chunk
-            let plaintext = crate::crypto::decrypt_chunk(&key, &current_nonce, &encrypted_buffer[..bytes_read], &header_bytes)
+            let plaintext = crate::crypto::decrypt_chunk(&key, &current_nonce, &encrypted_buffer[..bytes_read], b"")
                 .map_err(|_| Error::DecryptionFailed)?;
             output.write_all(&plaintext)?;
 
