@@ -74,9 +74,6 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked
 
-      - name: Build CLI
-        run: cargo build --release
-
       - name: Create minimal frontend
         run: |
           mkdir -p src-tauri/dist
@@ -113,48 +110,18 @@ jobs:
           </html>
           EOF
 
-      - name: Build Tauri App
-        run: cargo tauri build
+      - name: Build Tauri Bundles
+        run: cargo tauri build --bundles appimage,deb
 
-      - name: Create AppImage
-        run: |
-          mkdir -p TimENC.AppDir/usr/bin
-          mkdir -p TimENC.AppDir/usr/share/applications
-          mkdir -p TimENC.AppDir/usr/share/icons/hicolor/256x256/apps
-          cp target/release/timenc TimENC.AppDir/usr/bin/
-          cp TimENC.desktop TimENC.AppDir/usr/share/applications/
-          cp src-tauri/icons/128x128.png TimENC.AppDir/usr/share/icons/hicolor/256x256/apps/timenc.png
-
-          cat > TimENC.AppDir/AppRun << 'EOF'
-          #!/bin/bash
-          HERE="$(dirname "$(readlink -f "${0}")")"
-          exec "${HERE}/usr/bin/timenc" "$@"
-          EOF
-          chmod +x TimENC.AppDir/AppRun
-
-          cp TimENC.desktop TimENC.AppDir/
-          cp src-tauri/icons/128x128.png TimENC.AppDir/timenc.png
-
-          wget -O appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool
-          ARCH=x86_64 ./appimagetool --appimage-extract-and-run TimENC.AppDir TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
-
-      - name: Create .deb package
-        run: |
-          cargo install cargo-deb --locked
-          cargo deb --output timenc_${{ github.event.release.tag_name }}_amd64.deb
-
-      - name: Prepare Linux CLI Asset
-        run: |
-          cp target/release/timenc timenc-${{ github.event.release.tag_name }}-linux-x86_64
+      - name: List Linux Bundles
+        run: find target/release/bundle -maxdepth 2 -type f
 
       - name: Upload Linux Assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            TimENC-${{ github.event.release.tag_name }}-x86_64.AppImage
-            timenc_${{ github.event.release.tag_name }}_amd64.deb
-            timenc-${{ github.event.release.tag_name }}-linux-x86_64
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/deb/*.deb
 
   build-windows:
     runs-on: windows-latest
@@ -188,9 +155,6 @@ jobs:
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked
-
-      - name: Build CLI
-        run: cargo build --release
 
       - name: Create minimal frontend
         run: |
@@ -228,49 +192,30 @@ jobs:
           </html>
           "@ | Out-File -Encoding UTF8 src-tauri\dist\index.html
 
-      - name: Build Tauri App
-        run: cargo tauri build
+      - name: Build Tauri Bundles
+        run: cargo tauri build --bundles nsis
 
       - name: Create Portable EXE
         run: |
-          Copy-Item target\release\timenc.exe TimENC-portable-${{ github.event.release.tag_name }}.exe
+          $guiExe = Get-ChildItem target\release\*.exe |
+            Where-Object { $_.Name -ne "timenc.exe" } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $guiExe) {
+            throw "Could not find the Tauri GUI executable in target\\release"
+          }
+          Copy-Item $guiExe.FullName "TimENC-portable-${{ github.event.release.tag_name }}.exe"
 
-      - name: Build NSIS Installer
-        shell: pwsh
+      - name: List Windows Bundles
         run: |
-          $ver = "${{ github.event.release.tag_name }}"
-          $nsisScript = @"
-          !define APPNAME "TimENC"
-          !define VERSION "$ver"
-          Name "TimENC"
-          OutFile "TimENC-Setup-$ver.exe"
-          InstallDir "`$PROGRAMFILES\TimENC"
-          Page directory
-          Page instfiles
-          Section
-            SetOutPath "`$INSTDIR"
-            File /r "target\release\*"
-            WriteUninstaller "`$INSTDIR\uninstall.exe"
-            CreateShortcut "`$DESKTOP\TimENC.lnk" "`$INSTDIR\timenc.exe"
-          SectionEnd
-          Section "Uninstall"
-            Delete "`$DESKTOP\TimENC.lnk"
-            Delete "`$INSTDIR\uninstall.exe"
-            RMDir /r "`$INSTDIR"
-          SectionEnd
-          "@
-          $nsisScript | Out-File -Encoding ASCII installer.nsi
-
-          choco install nsis -y --no-progress
-
-          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
+          Get-ChildItem target\release\bundle -Recurse -File | Select-Object FullName,Length | Format-Table -AutoSize
 
       - name: Upload Windows Assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
             TimENC-portable-${{ github.event.release.tag_name }}.exe
-            TimENC-Setup-${{ github.event.release.tag_name }}.exe
+            target/release/bundle/nsis/*.exe
 
   build-macos:
     runs-on: macos-latest
@@ -304,9 +249,6 @@ jobs:
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked
-
-      - name: Build CLI
-        run: cargo build --release
 
       - name: Create minimal frontend
         run: |
@@ -344,18 +286,14 @@ jobs:
           </html>
           EOF
 
-      - name: Build Tauri App
-        run: cargo tauri build
+      - name: Build Tauri Bundles
+        run: cargo tauri build --bundles dmg
 
-      - name: Create DMG
-        run: |
-          mkdir dmg-staging
-          test -d target/release/bundle/macos/TimENC.app
-          cp -r target/release/bundle/macos/TimENC.app dmg-staging/
-          hdiutil create -volname "TimENC" -srcfolder dmg-staging -ov -format UDZO TimENC-${{ github.event.release.tag_name }}.dmg
+      - name: List macOS Bundles
+        run: find target/release/bundle -maxdepth 2 -type f
 
       - name: Upload macOS Assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            TimENC-${{ github.event.release.tag_name }}.dmg
+            target/release/bundle/dmg/*.dmg
