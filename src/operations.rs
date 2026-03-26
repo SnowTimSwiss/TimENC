@@ -196,8 +196,10 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
         _ => Err(Error::UnsupportedVersion { version }),
     };
 
-    // Always delete source .timenc file after decryption
-    best_effort_secure_delete_file(input_path)?;
+    // Only delete source .timenc file if decryption succeeded
+    if result.is_ok() {
+        best_effort_secure_delete_file(input_path)?;
+    }
 
     result
 }
