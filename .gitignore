@@ -58,3 +58,5 @@ htmlcov/
 # Legacy folder
 legacy/dist/
 legacy/build/
+
+.claude
