@@ -1,7 +1,5 @@
 # TimENC 🔐
 
-![TimENC GUI](Images/showroom/timenc-gui.png)
-
 **TimENC** is a modern, cross-platform encryption tool built with Rust and Tauri.
 It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation for strong, authenticated encryption - designed to be secure, simple, and open-source.
 
@@ -98,22 +96,6 @@ Download the latest release for your platform:
 
 👉 **Download:** [https://github.com/SnowTimSwiss/TimENC/releases/latest](https://github.com/SnowTimSwiss/TimENC/releases/latest)
 
-### From Source
-
-```bash
-# Clone the repository
-git clone https://github.com/SnowTimSwiss/TimENC.git
-cd TimENC
-
-# Build CLI
-cargo build --release
-
-# Build GUI (requires Tauri dependencies)
-cargo install tauri-cli
-cargo tauri build
-```
-
----
 
 ## 💻 Command Line Interface (CLI)
 
