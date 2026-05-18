@@ -1,4 +1,4 @@
-//! TIMENC file format handling (legacy v2 helpers, v3, and v4)
+//! Binary `.timenc` file formats.
 
 use crate::crypto::{self, NONCE_SIZE, SALT_SIZE, TAG_SIZE};
 use crate::error::{Error, Result};
@@ -6,13 +6,13 @@ use std::io::{self, Read, Write};
 use std::path::Path;
 use zeroize::Zeroizing;
 
-/// Chunk size for streaming encryption (64 KiB)
+/// Plaintext chunk size used by the streaming formats.
 pub const CHUNK_SIZE: usize = 64 * 1024;
 
-/// Encrypted chunk size (plaintext + tag)
+/// Encrypted chunk size for a full plaintext chunk.
 pub const ENC_CHUNK_SIZE: usize = CHUNK_SIZE + TAG_SIZE;
 
-/// Header structure for TIMENC files
+/// Header used by the older v2/v3 formats.
 #[derive(Debug, Clone)]
 pub struct Header {
     pub version: u8,
@@ -26,7 +26,7 @@ pub struct Header {
 }
 
 impl Header {
-    /// Serializes the header to bytes
+    /// Encodes this header as stored bytes.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
         let name_bytes = self.original_name.as_bytes();
         if name_bytes.len() > u16::MAX as usize {
@@ -35,77 +35,56 @@ impl Header {
 
         let mut buf = Vec::with_capacity(6 + 1 + 1 + 2 + name_bytes.len() + SALT_SIZE + 4 + 4 + 1 + NONCE_SIZE);
         
-        // Magic
         buf.extend_from_slice(crypto::MAGIC);
-        
-        // Version
         buf.push(self.version);
-        
-        // Is directory flag
         buf.push(if self.is_dir { 1 } else { 0 });
-        
-        // Name length (big-endian u16)
         buf.extend_from_slice(&(name_bytes.len() as u16).to_be_bytes());
-        
-        // Original name
         buf.extend_from_slice(name_bytes);
-        
-        // Salt
         buf.extend_from_slice(&self.salt);
-        
-        // Argon2 parameters
         buf.extend_from_slice(&self.time_cost.to_be_bytes());
         buf.extend_from_slice(&self.memory_kib.to_be_bytes());
         buf.push(self.parallelism as u8);
-        
-        // Nonce
         buf.extend_from_slice(&self.nonce);
 
         Ok(buf)
     }
 
-    /// Parses header from bytes
+    /// Parses a header from the start of a byte slice.
     pub fn from_bytes(data: &[u8]) -> Result<(Self, usize)> {
         if data.len() < 6 {
             return Err(Error::InvalidFormat);
         }
 
-        // Magic
         if &data[0..6] != crypto::MAGIC {
             return Err(Error::InvalidFormat);
         }
 
         let mut offset = 6;
 
-        // Version
         if data.len() <= offset {
             return Err(Error::InvalidFormat);
         }
         let version = data[offset];
         offset += 1;
 
-        // Is directory
         if data.len() <= offset {
             return Err(Error::InvalidFormat);
         }
         let is_dir = data[offset] == 1;
         offset += 1;
 
-        // Name length
         if data.len() < offset + 2 {
             return Err(Error::InvalidFormat);
         }
         let name_len = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
         offset += 2;
 
-        // Name
         if data.len() < offset + name_len {
             return Err(Error::InvalidFormat);
         }
         let original_name = String::from_utf8(data[offset..offset + name_len].to_vec())?;
         offset += name_len;
 
-        // Salt
         if data.len() < offset + SALT_SIZE {
             return Err(Error::InvalidFormat);
         }
@@ -113,7 +92,6 @@ impl Header {
             .map_err(|_| Error::InvalidFormat)?;
         offset += SALT_SIZE;
 
-        // Time cost
         if data.len() < offset + 4 {
             return Err(Error::InvalidFormat);
         }
@@ -122,7 +100,6 @@ impl Header {
         ]);
         offset += 4;
 
-        // Memory KiB
         if data.len() < offset + 4 {
             return Err(Error::InvalidFormat);
         }
@@ -131,14 +108,12 @@ impl Header {
         ]);
         offset += 4;
 
-        // Parallelism
         if data.len() <= offset {
             return Err(Error::InvalidFormat);
         }
         let parallelism = data[offset] as u32;
         offset += 1;
 
-        // Nonce
         if data.len() < offset + NONCE_SIZE {
             return Err(Error::InvalidFormat);
         }
@@ -220,7 +195,7 @@ impl Header {
         ))
     }
 
-    /// Creates a new header for v3 encryption
+    /// Builds a v3 header with the standard v3 KDF settings.
     pub fn new_v3(original_name: String, is_dir: bool, salt: [u8; SALT_SIZE], nonce: [u8; NONCE_SIZE]) -> Self {
         Header {
             version: 3,
@@ -246,26 +221,26 @@ pub fn sanitize_output_name(name: &str) -> Result<&str> {
     }
 }
 
-/// V4 format handler with encrypted metadata and separated metadata/data contexts.
+/// Current format with encrypted metadata and separate metadata/data contexts.
 pub mod v4 {
     use super::*;
 
-    /// Current v4 encryption format version.
+    /// Current encrypted-metadata format version.
     pub const FORMAT_VERSION_V4: u8 = 4;
 
-    /// Stronger v4 Argon2 defaults.
+    /// Default KDF settings for v4 files.
     pub const ARGON2_V4_TIME_COST: u32 = 3;
     pub const ARGON2_V4_MEMORY_KIB: u32 = 262_144; // 256 MiB
     pub const ARGON2_V4_PARALLELISM: u32 = 4;
 
-    /// Encrypted metadata for v4 files.
+    /// Metadata stored inside the encrypted metadata block.
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct Metadata {
         pub is_dir: bool,
         pub original_name: String,
     }
 
-    /// Public v4 header. Filename and directory flag live in encrypted metadata.
+    /// Public v4 header. File name and directory flag are encrypted separately.
     #[derive(Debug, Clone)]
     pub struct Header {
         pub version: u8,
@@ -623,11 +598,11 @@ pub mod v4 {
     }
 }
 
-/// V2 format handler (legacy helper - no longer used by the app)
+/// Compatibility helpers for the older in-memory v2 format.
 pub mod v2 {
     use super::*;
 
-    /// Encrypts data in V2 format (all in RAM)
+    /// Encrypts a complete v2 payload in memory.
     pub fn encrypt(
         plaintext: &[u8],
         header: &Header,
@@ -644,7 +619,6 @@ pub mod v2 {
         );
         let header_bytes = header.to_bytes()?;
 
-        // V2: Encrypt everything
         let ciphertext = crate::crypto::encrypt_chunk(&key, &header.nonce, plaintext, &header_bytes)?;
 
         let mut output = header_bytes;
@@ -652,7 +626,7 @@ pub mod v2 {
         Ok(output)
     }
 
-    /// Decrypts V2 format (all in RAM)
+    /// Decrypts a complete v2 payload in memory.
     pub fn decrypt(
         ciphertext: &[u8],
         header: &Header,
@@ -669,14 +643,13 @@ pub mod v2 {
         );
         let header_bytes = header.to_bytes()?;
 
-        // V2: Decrypt all ciphertext
         let plaintext = crate::crypto::decrypt_chunk(&key, &header.nonce, ciphertext, &header_bytes)?;
 
         Ok(plaintext)
     }
 }
 
-/// V3 format handler (streaming)
+/// Compatibility helpers for the older v3 streaming format.
 pub mod v3 {
     use super::*;
 
@@ -693,9 +666,7 @@ pub mod v3 {
         Ok(total)
     }
 
-    /// Encrypts data in V3 streaming format
-    /// 
-    /// Writes encrypted chunks to the output writer
+    /// Encrypts plaintext as v3 streaming chunks.
     pub fn encrypt_streaming<R: Read, W: Write>(
         input: &mut R,
         output: &mut W,
@@ -711,11 +682,9 @@ pub mod v3 {
             header.parallelism,
             keyfile_bytes,
         );
-        // Write header
         output.write_all(&header.to_bytes()?)?;
 
-        // Convert nonce to integer for incrementing (96-bit nonce = 12 bytes)
-        // We use big-endian and pad with 4 zero bytes at the front to make 16 bytes (u128)
+        // Pad the 96-bit nonce so it can be incremented as a u128.
         let mut nonce_padded = [0u8; 16];
         nonce_padded[4..].copy_from_slice(&header.nonce);
         let nonce_int = u128::from_be_bytes(nonce_padded);
@@ -729,13 +698,11 @@ pub mod v3 {
                 break;
             }
 
-            // Calculate nonce for this chunk
             let current_nonce_int = (nonce_int + chunk_counter) % (2u128.pow(96));
             let current_nonce_bytes = current_nonce_int.to_be_bytes();
             let current_nonce: [u8; NONCE_SIZE] = current_nonce_bytes[4..].try_into()
                 .map_err(|_| Error::InvalidFormat)?;
 
-            // Encrypt chunk
             let ciphertext = crate::crypto::encrypt_chunk(&key, &current_nonce, &buffer[..bytes_read], b"")
                 .map_err(Error::from)?;
             output.write_all(&ciphertext)?;
@@ -746,9 +713,7 @@ pub mod v3 {
         Ok(())
     }
 
-    /// Decrypts V3 streaming format
-    /// 
-    /// Reads encrypted chunks from input and writes decrypted data to output
+    /// Decrypts v3 streaming chunks into the output writer.
     pub fn decrypt_streaming<R: Read, W: Write>(
         input: &mut R,
         output: &mut W,
@@ -764,7 +729,7 @@ pub mod v3 {
             header.parallelism,
             keyfile_bytes,
         );
-        // Convert nonce to integer for incrementing (96-bit nonce = 12 bytes)
+        // Pad the 96-bit nonce so it can be incremented as a u128.
         let mut nonce_padded = [0u8; 16];
         nonce_padded[4..].copy_from_slice(&header.nonce);
         let nonce_int = u128::from_be_bytes(nonce_padded);

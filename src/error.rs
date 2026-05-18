@@ -1,11 +1,11 @@
-//! Error types for TimENC
+//! Shared error handling for the core library.
 
 use thiserror::Error;
 
-/// Result type alias for TimENC operations
+/// Result type used throughout the library.
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// All possible errors in TimENC
+/// Errors returned by encryption, decryption, archive handling, and keyfile I/O.
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("File not found: {path}")]

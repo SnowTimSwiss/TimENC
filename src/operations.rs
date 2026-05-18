@@ -1,4 +1,4 @@
-//! High-level encryption/decryption operations
+//! File-level encryption, decryption, and keyfile operations.
 
 use crate::crypto;
 use crate::error::{Error, Result};
@@ -9,7 +9,7 @@ use std::path::Component;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
-/// Options for encryption
+/// Inputs needed for an encryption run.
 #[derive(Debug, Clone)]
 pub struct EncryptOptions {
     pub password: String,
@@ -17,7 +17,7 @@ pub struct EncryptOptions {
     pub output_path: PathBuf,
 }
 
-/// Options for decryption
+/// Inputs needed for a decryption run.
 #[derive(Debug, Clone)]
 pub struct DecryptOptions {
     pub password: String,
@@ -25,14 +25,7 @@ pub struct DecryptOptions {
     pub output_dir: PathBuf,
 }
 
-/// Encrypts a file or directory
-/// 
-/// # Arguments
-/// * `input_path` - Path to file or directory to encrypt
-/// * `options` - Encryption options
-/// 
-/// # Returns
-/// Path to the encrypted file
+/// Encrypts a file or directory and removes the original on success.
 pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
     if !input_path.exists() {
         return Err(Error::FileNotFound {
@@ -47,7 +40,6 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
         .to_string_lossy()
         .to_string();
 
-    // Create temporary TAR archive for directories
     let (input_file, _temp_dir) = if is_dir {
         let temp_dir = tempfile::tempdir()?;
         let tar_path = temp_dir.path().join(format!("{}.tar", original_name));
@@ -63,14 +55,12 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
         (input_path.to_path_buf(), None)
     };
 
-    // Read keyfile if provided
     let keyfile_bytes = if let Some(ref keyfile_path) = options.keyfile_path {
         Some(fs::read(keyfile_path)?)
     } else {
         None
     };
 
-    // Generate salt and nonces for the v4 header.
     let salt = crypto::generate_salt();
     let metadata_nonce = crypto::generate_nonce();
     let data_nonce = crypto::generate_nonce();
@@ -79,10 +69,8 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
     let metadata_len = (metadata.to_bytes()?.len() + crypto::TAG_SIZE) as u32;
     let header = format::v4::Header::new(metadata_len, salt, metadata_nonce, data_nonce);
 
-    // Create output file
     let mut output_file = File::create(&options.output_path)?;
 
-    // Encrypt using V4 streaming format
     let mut input_file_handle = File::open(&input_file)?;
     format::v4::encrypt_streaming(
         &mut input_file_handle,
@@ -95,28 +83,16 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
 
     drop(output_file);
 
-    // Secure cleanup of key material happens automatically via Zeroizing
-
-    // Always delete source after encryption
     if is_dir {
         fs::remove_dir_all(input_path)?;
     } else {
         best_effort_secure_delete_file(input_path)?;
     }
 
-    // Temp directory is automatically cleaned up when dropped
-
     Ok(options.output_path.clone())
 }
 
-/// Decrypts a .timenc file
-/// 
-/// # Arguments
-/// * `input_path` - Path to .timenc file
-/// * `options` - Decryption options
-/// 
-/// # Returns
-/// Path to the decrypted file or directory
+/// Decrypts a `.timenc` file and removes the encrypted source on success.
 pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
     if !input_path.exists() {
         return Err(Error::FileNotFound {
@@ -133,21 +109,18 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
     let version = version_bytes[6];
     file.seek(std::io::SeekFrom::Start(0))?;
 
-    // Read keyfile if provided
     let keyfile_bytes = if let Some(ref keyfile_path) = options.keyfile_path {
         Some(fs::read(keyfile_path)?)
     } else {
         None
     };
 
-    // Decrypt based on version
     let result = match version {
         3 => {
             let (header, _header_len) = Header::read_from(&mut file)?;
             let temp_file = NamedTempFile::new()?;
             let temp_path = temp_file.path().to_path_buf();
 
-            // V3: Streaming decryption
             let mut temp_file_handle = File::create(&temp_path)?;
             format::v3::decrypt_streaming(
                 &mut file,
@@ -196,7 +169,6 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
         _ => Err(Error::UnsupportedVersion { version }),
     };
 
-    // Only delete source .timenc file if decryption succeeded
     if result.is_ok() {
         best_effort_secure_delete_file(input_path)?;
     }
@@ -204,13 +176,7 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
     result
 }
 
-/// Generates a new keyfile
-/// 
-/// # Arguments
-/// * `output_path` - Path where the keyfile should be created
-/// 
-/// # Returns
-/// Path to the created keyfile
+/// Writes a new keyfile with random bytes.
 pub fn generate_keyfile(output_path: &Path) -> Result<PathBuf> {
     if output_path.exists() {
         return Err(Error::FileExists {

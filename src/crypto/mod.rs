@@ -1,4 +1,4 @@
-//! Cryptographic primitives for TimENC
+//! Cryptographic constants and helpers used by the file formats.
 
 use argon2::{
     Argon2,
@@ -12,16 +12,16 @@ use chacha20poly1305::{
 use rand::RngCore;
 use zeroize::Zeroizing;
 
-/// Length of the encryption key in bytes
+/// ChaCha20-Poly1305 key length in bytes.
 pub const KEY_LEN: usize = 32;
 
-/// Length of the salt in bytes
+/// Argon2 salt length in bytes.
 pub const SALT_SIZE: usize = 16;
 
-/// Length of the nonce in bytes (96 bits)
+/// ChaCha20-Poly1305 nonce length in bytes.
 pub const NONCE_SIZE: usize = 12;
 
-/// Size of the authentication tag in bytes
+/// ChaCha20-Poly1305 authentication tag length in bytes.
 pub const TAG_SIZE: usize = 16;
 
 /// Default Argon2 parameters for legacy v3 compatibility.
@@ -29,21 +29,13 @@ pub const ARGON2_TIME_COST: u32 = 4;
 pub const ARGON2_MEMORY_KIB: u32 = 131072; // 128 MiB
 pub const ARGON2_PARALLELISM: u32 = 4;
 
-/// Magic bytes at the start of every .timenc file
+/// Magic bytes at the start of every `.timenc` file.
 pub const MAGIC: &[u8; 6] = b"TIMENC";
 
-/// Current encryption format version
+/// Legacy streaming format version.
 pub const FORMAT_VERSION: u8 = 3;
 
-/// Derives a key from password and optional keyfile using Argon2id
-/// 
-/// # Arguments
-/// * `password` - The password bytes
-/// * `salt` - Random salt (16 bytes)
-/// * `keyfile_bytes` - Optional keyfile content
-/// 
-/// # Returns
-/// A 32-byte key for ChaCha20-Poly1305
+/// Derives an encryption key from a password and, optionally, keyfile bytes.
 pub fn derive_key(
     password: &[u8],
     salt: &[u8],
@@ -52,7 +44,6 @@ pub fn derive_key(
     parallelism: u32,
     keyfile_bytes: Option<&[u8]>,
 ) -> Zeroizing<[u8; KEY_LEN]> {
-    // Combine password with keyfile if present
     let mut combined = Zeroizing::new(Vec::with_capacity(password.len() + 11 + 32));
     combined.extend_from_slice(password);
     
@@ -73,7 +64,6 @@ pub fn derive_key_from_secret(
     parallelism: u32,
 ) -> Zeroizing<[u8; KEY_LEN]> {
 
-    // Create Argon2id instance with v3 parameters
     let params = Params::new(
         memory_kib,
         time_cost,
@@ -107,28 +97,28 @@ pub fn derive_key_v3(
     )
 }
 
-/// Generates a random salt
+/// Generates a random Argon2 salt.
 pub fn generate_salt() -> [u8; SALT_SIZE] {
     let mut salt = [0u8; SALT_SIZE];
     rand::thread_rng().fill_bytes(&mut salt);
     salt
 }
 
-/// Generates a random nonce
+/// Generates a random AEAD nonce.
 pub fn generate_nonce() -> [u8; NONCE_SIZE] {
     let mut nonce = [0u8; NONCE_SIZE];
     rand::thread_rng().fill_bytes(&mut nonce);
     nonce
 }
 
-/// Generates a random keyfile
+/// Generates random keyfile material.
 pub fn generate_keyfile_data() -> [u8; 32] {
     let mut keyfile = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut keyfile);
     keyfile
 }
 
-/// Encrypts a single chunk using ChaCha20-Poly1305
+/// Encrypts one authenticated chunk.
 pub fn encrypt_chunk(
     key: &[u8; KEY_LEN],
     nonce: &[u8; NONCE_SIZE],
@@ -140,7 +130,7 @@ pub fn encrypt_chunk(
     cipher.encrypt(nonce.into(), Payload { msg: plaintext, aad })
 }
 
-/// Decrypts a single chunk using ChaCha20-Poly1305
+/// Decrypts one authenticated chunk.
 pub fn decrypt_chunk(
     key: &[u8; KEY_LEN],
     nonce: &[u8; NONCE_SIZE],
