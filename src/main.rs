@@ -1,4 +1,4 @@
-//! TimENC CLI - Command Line Interface
+//! Command line entry point.
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
