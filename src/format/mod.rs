@@ -225,8 +225,18 @@ pub fn sanitize_output_name(name: &str) -> Result<&str> {
 pub mod v4 {
     use super::*;
 
-    /// Current encrypted-metadata format version.
+    /// Legacy encrypted-metadata format version. Still decryptable, but no
+    /// longer written: superseded by [`FORMAT_VERSION_V4_5`].
     pub const FORMAT_VERSION_V4: u8 = 4;
+
+    /// Current encrypted-metadata format version. Same on-disk layout and
+    /// cryptography as v4 - the only difference is the `compressed` byte in
+    /// the metadata block, so this isn't "v5" (no crypto upgrade), just v4
+    /// with one more metadata field. A distinct version byte still matters:
+    /// it makes clients built before compression support existed fail loudly
+    /// (`UnsupportedVersion`) instead of silently writing out still-compressed
+    /// "decrypted" data when they don't know to look at the `compressed` flag.
+    pub const FORMAT_VERSION_V4_5: u8 = 5;
 
     /// Default KDF settings for v4 files.
     pub const ARGON2_V4_TIME_COST: u32 = 3;
@@ -238,6 +248,7 @@ pub mod v4 {
     pub struct Metadata {
         pub is_dir: bool,
         pub original_name: String,
+        pub compressed: bool,
     }
 
     /// Public v4 header. File name and directory flag are encrypted separately.
@@ -274,10 +285,11 @@ pub mod v4 {
     }
 
     impl Metadata {
-        pub fn new(original_name: String, is_dir: bool) -> Self {
+        pub fn new(original_name: String, is_dir: bool, compressed: bool) -> Self {
             Self {
                 is_dir,
                 original_name,
+                compressed,
             }
         }
 
@@ -287,13 +299,17 @@ pub mod v4 {
                 return Err(Error::FilenameTooLong);
             }
 
-            let mut buf = Vec::with_capacity(1 + 2 + name_bytes.len());
+            let mut buf = Vec::with_capacity(1 + 2 + name_bytes.len() + 1);
             buf.push(if self.is_dir { 1 } else { 0 });
             buf.extend_from_slice(&(name_bytes.len() as u16).to_be_bytes());
             buf.extend_from_slice(name_bytes);
+            buf.push(if self.compressed { 1 } else { 0 });
             Ok(buf)
         }
 
+        /// Parses metadata. The trailing `compressed` byte is optional so that
+        /// v4 files written before compression support was added still decrypt
+        /// (they default to uncompressed).
         pub fn from_bytes(data: &[u8]) -> Result<Self> {
             if data.len() < 3 {
                 return Err(Error::InvalidFormat);
@@ -311,9 +327,18 @@ pub mod v4 {
             }
 
             let original_name = String::from_utf8(data[3..3 + name_len].to_vec())?;
+
+            let compressed = match data.get(3 + name_len) {
+                None => false,
+                Some(0) => false,
+                Some(1) => true,
+                Some(_) => return Err(Error::InvalidFormat),
+            };
+
             Ok(Self {
                 is_dir,
                 original_name,
+                compressed,
             })
         }
     }
@@ -326,7 +351,7 @@ pub mod v4 {
             data_nonce: [u8; NONCE_SIZE],
         ) -> Self {
             Self {
-                version: FORMAT_VERSION_V4,
+                version: FORMAT_VERSION_V4_5,
                 salt,
                 time_cost: ARGON2_V4_TIME_COST,
                 memory_kib: ARGON2_V4_MEMORY_KIB,
@@ -366,7 +391,7 @@ pub mod v4 {
             let mut offset = 6;
             let version = data[offset];
             offset += 1;
-            if version != FORMAT_VERSION_V4 {
+            if version != FORMAT_VERSION_V4 && version != FORMAT_VERSION_V4_5 {
                 return Err(Error::InvalidFormat);
             }
 

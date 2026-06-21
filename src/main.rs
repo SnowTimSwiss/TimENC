@@ -31,6 +31,10 @@ enum Commands {
         /// Optional keyfile for additional entropy
         #[arg(short, long)]
         keyfile: Option<PathBuf>,
+
+        /// Compress the data with zstd before encrypting it
+        #[arg(short = 'c', long)]
+        compress: bool,
     },
 
     /// Decrypt a .timenc file
@@ -67,11 +71,13 @@ fn main() {
             output,
             password,
             keyfile,
+            compress,
         } => {
             let options = EncryptOptions {
                 password,
                 keyfile_path: keyfile,
                 output_path: output,
+                compress,
             };
             encrypt(&input, options)
                 .map(|_| ())

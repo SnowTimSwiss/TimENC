@@ -3,8 +3,6 @@
 **TimENC** is a modern, cross-platform encryption tool built with Rust and Tauri.
 It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation for strong, authenticated encryption - designed to be secure, simple, and open-source.
 
-> **Version 2.1.1** - Complete rewrite in Rust for better performance, memory safety, and smaller binaries.
-> Encryption default is v4. Decryption stays compatible with v3 and v4 files.
 
 ---
 
@@ -13,6 +11,7 @@ It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation fo
 * **Strong encryption** with ChaCha20-Poly1305 (authenticated AEAD)
 * **Secure password-based key derivation** using Argon2id
 * **Keyfile support** as an optional second factor
+* **Optional zstd compression** before encryption (smaller `.timenc` files for compressible content)
 * **Automatic directory archiving and encryption**
 * **Encrypted metadata** for filenames and directory flags
 * **Tamper-resistant headers** (AAD authentication)
@@ -58,9 +57,9 @@ It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation fo
 ### File Format
 
 ```
-TIMENC v4:
+TIMENC v4.5 (current):
 ├─ Magic: "TIMENC" (6 bytes)
-├─ Version: 0x04 (1 byte)
+├─ Version: 0x05 (1 byte)
 ├─ Salt: 16 bytes
 ├─ TimeCost: u32 big-endian (4 bytes)
 ├─ MemoryKiB: u32 big-endian (4 bytes)
@@ -72,15 +71,21 @@ TIMENC v4:
 Encrypted Metadata:
 ├─ is_dir: 1 byte
 ├─ name_len: u16 big-endian
-└─ original_name: UTF-8
+├─ original_name: UTF-8
+└─ compressed: 1 byte (whether the payload was zstd-compressed before encryption)
 
 Encrypted Payload:
 ├─ Metadata ciphertext + tag
 └─ Data chunks: ciphertext + tag (64 KiB plaintext per chunk)
 
-Supported files:
-├─ v3 remains decryptable
-└─ v4 is the default encryption format
+Supported files (decryption only):
+├─ v3 (Version 0x03, no encrypted metadata)
+└─ v4 (Version 0x04, same layout as v4.5 but without the `compressed` byte)
+
+v4.5 uses the same cryptography as v4 (ChaCha20-Poly1305 + Argon2id) - the
+version bump only exists so that builds without compression support fail
+with a clear "unsupported version" error instead of silently emitting
+still-compressed data when decrypting a compressed file.
 ```
 
 ---
@@ -159,6 +164,14 @@ timenc encrypt secret.txt -o secret.timenc -p "MyPassword" -k ./mykeyfile.key
 timenc decrypt secret.timenc -o ./decrypted -p "MyPassword" -k ./mykeyfile.key
 ```
 
+### Compressing Before Encryption (Optional)
+
+For compressible content (text, logs, source code, tarred directories), compress with zstd before encrypting to shrink the output file. Compression is recorded in the encrypted, authenticated metadata, so decryption detects it automatically - no flag needed on the decrypt side.
+
+```bash
+timenc encrypt logs/ -o logs.timenc -p "MyPassword" --compress
+```
+
 ### CLI Commands Overview
 
 | Command | Description |
@@ -174,6 +187,7 @@ timenc decrypt secret.timenc -o ./decrypted -p "MyPassword" -k ./mykeyfile.key
 | `-o, --output` | Output path (file for encrypt, folder for decrypt) |
 | `-p, --password` | Password for encryption/decryption |
 | `-k, --keyfile` | Optional keyfile for additional entropy |
+| `-c, --compress` | Compress with zstd before encrypting (encrypt only) |
 | `--delete-source` | Delete source file after operation |
 | `-h, --help` | Show help message |
 | `-v, --version` | Show version information |
@@ -198,9 +212,11 @@ timenc decrypt secret.timenc -o ./decrypted -p "MyPassword" -k ./mykeyfile.key
 | **V2 Decryption** | ✅ | ❌ |
 | **V3 Decryption** | ✅ | ✅ |
 | **V4 Decryption** | ❌ | ✅ |
+| **V4.5 Decryption** | ❌ | ✅ |
 | **V2 Encryption** | ✅ | ❌ (deprecated) |
 | **V3 Encryption** | ✅ | ❌ (legacy) |
-| **V4 Encryption** | ❌ | ✅ (default) |
+| **V4 Encryption** | ❌ | ❌ (legacy) |
+| **V4.5 Encryption** | ❌ | ✅ (default) |
 | **Keyfile Format** | 32 Bytes | 32 Bytes (compatible) |
 | **Argon2 Parameters** | time=4, mem=128MB, parallel=4 | v4 defaults, versioned in header |
 

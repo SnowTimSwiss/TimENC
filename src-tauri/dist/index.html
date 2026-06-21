@@ -392,7 +392,14 @@
               <button type="button" class="btn" id="jump-tools">Create</button>
             </div>
           </div>
-          
+
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="enc-compress">
+              <span id="enc-compress-label">Compress before encrypting</span>
+            </label>
+          </div>
+
           <div style="margin-top: 24px">
             <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;" id="enc-submit">Encrypt</button>
           </div>
@@ -480,7 +487,7 @@
         
         <div class="settings-group">
           <div class="settings-label" id="version-label">Version</div>
-          <div class="settings-desc" id="version-desc">TimENC v2.1.1 - v4 encryption defaults</div>
+          <div class="settings-desc" id="version-desc">TimENC v2.2.0 - v4.5 encryption defaults</div>
         </div>
       </section>
     </div>
@@ -505,6 +512,7 @@
           keyfilePlaceholder: "Select keyfile",
           browseBtn: "Browse",
           createBtn: "Create",
+          compressLabel: "Compress before encrypting",
           submitBtn: "Encrypt"
         },
         decrypt: {
@@ -528,7 +536,7 @@
           title: "Settings",
           langLabel: "Language",
           versionLabel: "Version",
-          versionDesc: "TimENC v2.1.1 - v4 encrypted metadata + Argon2id"
+          versionDesc: "TimENC v2.2.0 - v4.5 encrypted metadata + Argon2id"
         },
         common: {
           ready: "Ready",
@@ -559,6 +567,7 @@
           keyfilePlaceholder: "Keyfile auswählen",
           browseBtn: "Durchsuchen",
           createBtn: "Erstellen",
+          compressLabel: "Vor der Verschlüsselung komprimieren",
           submitBtn: "Verschlüsseln"
         },
         decrypt: {
@@ -582,7 +591,7 @@
           title: "Einstellungen",
           langLabel: "Sprache",
           versionLabel: "Version",
-          versionDesc: "TimENC v2.1.1 - v4 verschluesselte Metadaten + Argon2id"
+          versionDesc: "TimENC v2.2.0 - v4.5 verschluesselte Metadaten + Argon2id"
         },
         common: {
           ready: "Bereit",
@@ -604,7 +613,7 @@
     const statusEl = document.getElementById("status");
     const resultEl = document.getElementById("result");
     const languageSelect = document.getElementById("language-select");
-    const CURRENT_VERSION = "2.1.1";
+    const CURRENT_VERSION = "2.2.0";
     
     function t(section, key) {
       return translations[currentLang][section]?.[key] || translations.en[section]?.[key] || "";
@@ -754,6 +763,7 @@
       document.getElementById("enc-keyfile").placeholder = t("encrypt", "keyfilePlaceholder");
       document.getElementById("enc-browse-keyfile").textContent = t("encrypt", "browseBtn");
       document.getElementById("jump-tools").textContent = t("encrypt", "createBtn");
+      document.getElementById("enc-compress-label").textContent = t("encrypt", "compressLabel");
       document.getElementById("enc-submit").textContent = t("encrypt", "submitBtn");
       
       document.getElementById("dec-title").textContent = t("decrypt", "title");
@@ -999,7 +1009,8 @@
           input_path: getFieldValue("enc-input"),
           output_path: getFieldValue("enc-output"),
           password: getFieldValue("enc-password"),
-          keyfile_path: getOptionalFieldValue("enc-keyfile")
+          keyfile_path: getOptionalFieldValue("enc-keyfile"),
+          compress: document.getElementById("enc-compress").checked
         }
       }));
     });

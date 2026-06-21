@@ -212,7 +212,7 @@ fn test_v4_header_serialization_and_metadata_roundtrip() {
     let salt = crypto::generate_salt();
     let metadata_nonce = crypto::generate_nonce();
     let data_nonce = crypto::generate_nonce();
-    let metadata = timenc::format::v4::Metadata::new("secret.txt".to_string(), false);
+    let metadata = timenc::format::v4::Metadata::new("secret.txt".to_string(), false, false);
     let metadata_len = (metadata.to_bytes().expect("metadata bytes").len() + crypto::TAG_SIZE) as u32;
     let header = timenc::format::v4::Header::new(metadata_len, salt, metadata_nonce, data_nonce);
 
@@ -221,7 +221,7 @@ fn test_v4_header_serialization_and_metadata_roundtrip() {
         .expect("Failed to parse v4 header");
 
     assert_eq!(header_len, bytes.len());
-    assert_eq!(parsed_header.version, 4);
+    assert_eq!(parsed_header.version, 5);
     assert_eq!(parsed_header.salt, salt);
     assert_eq!(parsed_header.metadata_nonce, metadata_nonce);
     assert_eq!(parsed_header.data_nonce, data_nonce);
@@ -233,7 +233,7 @@ fn test_v4_streaming_roundtrip_with_fragmented_reads() {
     let salt = crypto::generate_salt();
     let metadata_nonce = crypto::generate_nonce();
     let data_nonce = crypto::generate_nonce();
-    let metadata = timenc::format::v4::Metadata::new("chunky.bin".to_string(), false);
+    let metadata = timenc::format::v4::Metadata::new("chunky.bin".to_string(), false, false);
     let metadata_len = (metadata.to_bytes().expect("metadata bytes").len() + crypto::TAG_SIZE) as u32;
     let header = timenc::format::v4::Header::new(metadata_len, salt, metadata_nonce, data_nonce);
     let password = b"password";
@@ -273,4 +273,30 @@ fn test_v4_streaming_roundtrip_with_fragmented_reads() {
     .expect("decryption should succeed");
 
     assert_eq!(decrypted, plaintext);
+}
+
+#[test]
+fn test_v4_metadata_without_compressed_byte_defaults_to_uncompressed() {
+    // Pre-compression v4 files only stored is_dir + name_len + name, with no
+    // trailing `compressed` byte. Parsing such metadata must still succeed.
+    let mut legacy_metadata_bytes = Vec::new();
+    legacy_metadata_bytes.push(0u8); // is_dir = false
+    let name = b"legacy.txt";
+    legacy_metadata_bytes.extend_from_slice(&(name.len() as u16).to_be_bytes());
+    legacy_metadata_bytes.extend_from_slice(name);
+
+    let parsed = timenc::format::v4::Metadata::from_bytes(&legacy_metadata_bytes)
+        .expect("legacy metadata should parse");
+    assert_eq!(parsed.original_name, "legacy.txt");
+    assert!(!parsed.is_dir);
+    assert!(!parsed.compressed);
+}
+
+#[test]
+fn test_v4_metadata_roundtrip_with_compressed_flag() {
+    let metadata = timenc::format::v4::Metadata::new("data.bin".to_string(), false, true);
+    let bytes = metadata.to_bytes().expect("metadata bytes");
+    let parsed = timenc::format::v4::Metadata::from_bytes(&bytes).expect("metadata should parse");
+    assert_eq!(parsed, metadata);
+    assert!(parsed.compressed);
 }

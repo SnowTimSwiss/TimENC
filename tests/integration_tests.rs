@@ -33,6 +33,7 @@ fn test_encrypt_decrypt_file_roundtrip() {
         password: password.to_string(),
         keyfile_path: None,
         output_path: output_path.clone(),
+        compress: false,
     };
     
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -54,7 +55,7 @@ fn test_encrypt_decrypt_file_roundtrip() {
 }
 
 #[test]
-fn test_encrypt_uses_v4_format() {
+fn test_encrypt_uses_v4_5_format() {
     let original_content = b"Version check";
     let password = "test_password_123";
 
@@ -66,6 +67,7 @@ fn test_encrypt_uses_v4_format() {
         password: password.to_string(),
         keyfile_path: None,
         output_path: output_path.clone(),
+        compress: false,
     };
 
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -75,7 +77,7 @@ fn test_encrypt_uses_v4_format() {
     use std::io::Read;
     file.read_exact(&mut header).expect("Failed to read header");
     assert_eq!(&header[0..6], b"TIMENC");
-    assert_eq!(header[6], 4);
+    assert_eq!(header[6], 5);
 }
 
 #[test]
@@ -99,6 +101,7 @@ fn test_encrypt_decrypt_with_keyfile() {
         password: password.to_string(),
         keyfile_path: Some(keyfile_path.clone()),
         output_path: output_path.clone(),
+        compress: false,
     };
     
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -136,6 +139,7 @@ fn test_decrypt_wrong_password() {
         password: password.to_string(),
         keyfile_path: None,
         output_path: output_path.clone(),
+        compress: false,
     };
     
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -174,6 +178,7 @@ fn test_encrypt_decrypt_directory() {
         password: password.to_string(),
         keyfile_path: None,
         output_path: output_path.clone(),
+        compress: false,
     };
     
     encrypt(&input_dir, encrypt_options).expect("Encryption failed");
@@ -399,4 +404,122 @@ fn test_decrypt_python_v3_file() {
 
     let decrypted = fs::read(result_path).expect("Failed to read decrypted file");
     assert_eq!(decrypted, plaintext);
+}
+
+#[test]
+fn test_encrypt_decrypt_with_compression_roundtrip() {
+    let original_content = b"compress me ".repeat(2000);
+    let password = "test_password_compress";
+
+    let (input_path, _input_temp) = setup_test_file(&original_content);
+    let encrypt_temp = tempfile::tempdir().expect("Failed to create encrypt temp dir");
+    let decrypt_temp = tempfile::tempdir().expect("Failed to create decrypt temp dir");
+
+    let output_path = encrypt_temp.path().join("test.timenc");
+
+    let encrypt_options = EncryptOptions {
+        password: password.to_string(),
+        keyfile_path: None,
+        output_path: output_path.clone(),
+        compress: true,
+    };
+
+    encrypt(&input_path, encrypt_options).expect("Encryption failed");
+
+    // Highly repetitive plaintext should compress well, so the encrypted
+    // output should be noticeably smaller than the original content.
+    let encrypted_len = fs::metadata(&output_path).expect("metadata").len();
+    assert!(
+        (encrypted_len as usize) < original_content.len() / 2,
+        "expected compressed ciphertext to be much smaller than the plaintext"
+    );
+
+    let decrypt_options = DecryptOptions {
+        password: password.to_string(),
+        keyfile_path: None,
+        output_dir: decrypt_temp.path().to_path_buf(),
+    };
+
+    let result_path = decrypt(&output_path, decrypt_options).expect("Decryption failed");
+    let decrypted_content = fs::read(&result_path).expect("Failed to read decrypted file");
+    assert_eq!(&original_content[..], &decrypted_content[..]);
+}
+
+
+#[test]
+fn test_decrypt_legacy_v4_byte_version_four() {
+    // Simulates a file written before v4.5 (compression support) existed:
+    // version byte 4, metadata with no trailing `compressed` byte.
+    let salt = timenc::crypto::generate_salt();
+    let metadata_nonce = timenc::crypto::generate_nonce();
+    let data_nonce = timenc::crypto::generate_nonce();
+    let password = b"password";
+    let plaintext = b"legacy v4 payload";
+
+    let metadata = timenc::format::v4::Metadata::new("legacy.txt".to_string(), false, false);
+    let metadata_len =
+        (metadata.to_bytes().expect("metadata bytes").len() + timenc::crypto::TAG_SIZE) as u32;
+    let mut header = timenc::format::v4::Header::new(metadata_len, salt, metadata_nonce, data_nonce);
+    header.version = 4;
+
+    let mut encrypted = Vec::new();
+    timenc::format::v4::encrypt_streaming(
+        &mut Cursor::new(plaintext.to_vec()),
+        &mut encrypted,
+        &header,
+        &metadata,
+        password,
+        None,
+    )
+    .expect("encryption should succeed");
+
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let encrypted_path = temp_dir.path().join("legacy.timenc");
+    let output_dir = temp_dir.path().join("out");
+    fs::write(&encrypted_path, encrypted).expect("Failed to write encrypted file");
+
+    let result_path = decrypt(
+        &encrypted_path,
+        DecryptOptions {
+            password: "password".to_string(),
+            keyfile_path: None,
+            output_dir,
+        },
+    )
+    .expect("decryption should succeed");
+
+    let decrypted = fs::read(result_path).expect("Failed to read decrypted file");
+    assert_eq!(decrypted, plaintext);
+}
+
+#[test]
+fn test_decrypt_rejects_unknown_future_version() {
+    let salt = timenc::crypto::generate_salt();
+    let metadata_nonce = timenc::crypto::generate_nonce();
+    let data_nonce = timenc::crypto::generate_nonce();
+    let metadata = timenc::format::v4::Metadata::new("future.txt".to_string(), false, false);
+    let metadata_len =
+        (metadata.to_bytes().expect("metadata bytes").len() + timenc::crypto::TAG_SIZE) as u32;
+    let mut header = timenc::format::v4::Header::new(metadata_len, salt, metadata_nonce, data_nonce);
+    header.version = 6;
+
+    let mut encrypted = header.to_bytes().expect("header bytes");
+    encrypted.extend_from_slice(&[0u8; 64]); // placeholder payload, never read
+
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let encrypted_path = temp_dir.path().join("future.timenc");
+    let output_dir = temp_dir.path().join("out");
+    fs::write(&encrypted_path, encrypted).expect("Failed to write encrypted file");
+
+    let result = decrypt(
+        &encrypted_path,
+        DecryptOptions {
+            password: "password".to_string(),
+            keyfile_path: None,
+            output_dir,
+        },
+    );
+
+    assert!(result.is_err());
+    assert!(encrypted_path.exists(), "source file must be preserved when decryption fails");
 }
