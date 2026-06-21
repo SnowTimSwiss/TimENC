@@ -14,6 +14,8 @@ pub struct EncryptRequest {
     output_path: PathBuf,
     password: String,
     keyfile_path: Option<PathBuf>,
+    #[serde(default)]
+    compress: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -72,6 +74,7 @@ async fn encrypt_file(request: EncryptRequest) -> Result<OperationResult, String
         password: request.password,
         keyfile_path: request.keyfile_path,
         output_path: request.output_path,
+        compress: request.compress,
     };
 
     match encrypt(&request.input_path, options) {

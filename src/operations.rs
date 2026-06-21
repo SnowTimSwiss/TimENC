@@ -15,6 +15,7 @@ pub struct EncryptOptions {
     pub password: String,
     pub keyfile_path: Option<PathBuf>,
     pub output_path: PathBuf,
+    pub compress: bool,
 }
 
 /// Inputs needed for a decryption run.
@@ -65,21 +66,34 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
     let metadata_nonce = crypto::generate_nonce();
     let data_nonce = crypto::generate_nonce();
 
-    let metadata = format::v4::Metadata::new(original_name.clone(), is_dir);
+    let metadata = format::v4::Metadata::new(original_name.clone(), is_dir, options.compress);
     let metadata_len = (metadata.to_bytes()?.len() + crypto::TAG_SIZE) as u32;
     let header = format::v4::Header::new(metadata_len, salt, metadata_nonce, data_nonce);
 
     let mut output_file = File::create(&options.output_path)?;
 
-    let mut input_file_handle = File::open(&input_file)?;
-    format::v4::encrypt_streaming(
-        &mut input_file_handle,
-        &mut output_file,
-        &header,
-        &metadata,
-        options.password.as_bytes(),
-        keyfile_bytes.as_deref(),
-    )?;
+    let plain_input = File::open(&input_file)?;
+    if options.compress {
+        let mut compressing_reader = zstd::stream::read::Encoder::new(plain_input, 0)?;
+        format::v4::encrypt_streaming(
+            &mut compressing_reader,
+            &mut output_file,
+            &header,
+            &metadata,
+            options.password.as_bytes(),
+            keyfile_bytes.as_deref(),
+        )?;
+    } else {
+        let mut input_file_handle = plain_input;
+        format::v4::encrypt_streaming(
+            &mut input_file_handle,
+            &mut output_file,
+            &header,
+            &metadata,
+            options.password.as_bytes(),
+            keyfile_bytes.as_deref(),
+        )?;
+    }
 
     drop(output_file);
 
@@ -137,7 +151,7 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
                 &options.output_dir,
             )
         }
-        4 => {
+        4 | 5 => {
             let (header, _header_len) = format::v4::Header::read_from(&mut file)?;
             let mut encrypted_metadata = vec![0u8; header.metadata_len as usize];
             file.read_exact(&mut encrypted_metadata)?;
@@ -150,14 +164,27 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
 
             let temp_file = NamedTempFile::new()?;
             let temp_path = temp_file.path().to_path_buf();
-            let mut temp_file_handle = File::create(&temp_path)?;
-            format::v4::decrypt_streaming(
-                &mut file,
-                &mut temp_file_handle,
-                &header,
-                options.password.as_bytes(),
-                keyfile_bytes.as_deref(),
-            )?;
+            let temp_file_handle = File::create(&temp_path)?;
+            if metadata.compressed {
+                let mut decompressing_writer = zstd::stream::write::Decoder::new(temp_file_handle)?;
+                format::v4::decrypt_streaming(
+                    &mut file,
+                    &mut decompressing_writer,
+                    &header,
+                    options.password.as_bytes(),
+                    keyfile_bytes.as_deref(),
+                )?;
+                decompressing_writer.flush()?;
+            } else {
+                let mut temp_file_handle = temp_file_handle;
+                format::v4::decrypt_streaming(
+                    &mut file,
+                    &mut temp_file_handle,
+                    &header,
+                    options.password.as_bytes(),
+                    keyfile_bytes.as_deref(),
+                )?;
+            }
 
             handle_decrypted_output(
                 metadata.original_name,
