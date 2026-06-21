@@ -3,6 +3,8 @@
 **TimENC** is a modern, cross-platform encryption tool built with Rust and Tauri.
 It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation for strong, authenticated encryption - designed to be secure, simple, and open-source.
 
+> **Version 2.1.1** - Complete rewrite in Rust for better performance, memory safety, and smaller binaries.
+> Encryption default is v4. Decryption stays compatible with v3 and v4 files.
 
 ---
 
@@ -187,7 +189,6 @@ timenc encrypt logs/ -o logs.timenc -p "MyPassword" --compress
 | `-o, --output` | Output path (file for encrypt, folder for decrypt) |
 | `-p, --password` | Password for encryption/decryption |
 | `-k, --keyfile` | Optional keyfile for additional entropy |
-| `-c, --compress` | Compress with zstd before encrypting (encrypt only) |
 | `--delete-source` | Delete source file after operation |
 | `-h, --help` | Show help message |
 | `-v, --version` | Show version information |
@@ -226,7 +227,7 @@ timenc encrypt logs/ -o logs.timenc -p "MyPassword" --compress
 
 **TimENC is licensed under the GNU General Public License v3.0 (GPL‑3.0).**
 
-### What this means (short & simple)
+### What this means:
 
 * ✅ You are free to use TimENC for any purpose
 * ✅ You are free to study and modify the source code
@@ -235,7 +236,7 @@ timenc encrypt logs/ -o logs.timenc -p "MyPassword" --compress
 
 **Conditions:**
 
-* Any redistributed or modified version must also be licensed under GPL‑3.0
+* Any redistributed or modified version must also be licensed under GPL‑3.0 or compatible
 * The source code must remain available
 * Changes must be clearly documented
 
