@@ -48,6 +48,10 @@ struct AppState {
     pending_open_file: Mutex<Option<PathBuf>>,
 }
 
+/// Picks the first existing `.timenc` file out of the launch arguments.
+///
+/// Used to support "Open with TimENC" / file associations, both on first launch
+/// and when a second instance is started with a file argument.
 fn find_timenc_path<I>(args: I) -> Option<PathBuf>
 where
     I: IntoIterator<Item = OsString>,

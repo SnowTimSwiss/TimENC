@@ -210,6 +210,12 @@ impl Header {
     }
 }
 
+/// Validates a decrypted file name before it is used as an output path.
+///
+/// The name must be a single normal path component: anything containing a
+/// directory separator, `..`, a root, or a drive prefix is rejected with
+/// [`Error::PathTraversal`]. This stops a crafted archive from writing outside
+/// the chosen output directory.
 pub fn sanitize_output_name(name: &str) -> Result<&str> {
     let path = Path::new(name);
     let mut components = path.components();
@@ -488,6 +494,7 @@ pub mod v4 {
         )
     }
 
+    /// Encrypts the metadata block, binding it to the header via AAD.
     pub fn encrypt_metadata(
         metadata: &Metadata,
         header: &Header,
@@ -501,6 +508,7 @@ pub mod v4 {
         crate::crypto::encrypt_chunk(&key, &header.metadata_nonce, &plaintext, &aad).map_err(Error::from)
     }
 
+    /// Decrypts and parses the metadata block, verifying it against the header.
     pub fn decrypt_metadata(
         encrypted_metadata: &[u8],
         header: &Header,
@@ -515,6 +523,9 @@ pub mod v4 {
         Metadata::from_bytes(&plaintext)
     }
 
+    /// Writes the header, encrypted metadata, and the payload as authenticated
+    /// chunks. Each data chunk uses a distinct nonce derived from the base data
+    /// nonce plus the chunk index.
     pub fn encrypt_streaming<R: Read, W: Write>(
         input: &mut R,
         output: &mut W,
@@ -574,6 +585,8 @@ pub mod v4 {
         Ok(())
     }
 
+    /// Decrypts the payload chunks into the writer, reconstructing the per-chunk
+    /// nonces. A failed authentication tag aborts with [`Error::DecryptionFailed`].
     pub fn decrypt_streaming<R: Read, W: Write>(
         input: &mut R,
         output: &mut W,
@@ -771,13 +784,11 @@ pub mod v3 {
                 return Err(Error::InvalidFormat);
             }
 
-            // Calculate nonce for this chunk
             let current_nonce_int = (nonce_int + chunk_counter) % (2u128.pow(96));
             let current_nonce_bytes = current_nonce_int.to_be_bytes();
             let current_nonce: [u8; NONCE_SIZE] = current_nonce_bytes[4..].try_into()
                 .map_err(|_| Error::InvalidFormat)?;
 
-            // Decrypt chunk
             let plaintext = crate::crypto::decrypt_chunk(&key, &current_nonce, &encrypted_buffer[..bytes_read], b"")
                 .map_err(|_| Error::DecryptionFailed)?;
             output.write_all(&plaintext)?;
