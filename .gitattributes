@@ -1,0 +1,7 @@
+# Shell scripts and Flatpak build files must use LF; CRLF breaks the Linux
+# Flatpak build (the wrapper script and the manifest's shell build-commands).
+*.sh             text eol=lf
+flatpak/*.yml    text eol=lf
+flatpak/*.json   text eol=lf
+flatpak/*.xml    text eol=lf
+flatpak/*.desktop text eol=lf
