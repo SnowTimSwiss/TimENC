@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.SnowTimSwiss.TimENC</id>
+
+  <name>TimENC</name>
+  <summary>Secure file encryption tool</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+
+  <developer id="io.github.SnowTimSwiss">
+    <name>SnowTimSwiss</name>
+  </developer>
+
+  <description>
+    <p>
+      TimENC is a secure file encryption tool. It protects your files using
+      ChaCha20-Poly1305 authenticated encryption with Argon2id key derivation.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>ChaCha20-Poly1305 authenticated encryption</li>
+      <li>Argon2id password-based key derivation</li>
+      <li>Simple, cross-platform graphical interface</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.SnowTimSwiss.TimENC.desktop</launchable>
+
+  <!-- TODO (Flathub): at least one screenshot on a public URL is required.
+       Replace the URL below with a real screenshot before submitting. -->
+  <screenshots>
+    <screenshot type="default">
+      <caption>The TimENC main window</caption>
+      <image>https://raw.githubusercontent.com/SnowTimSwiss/TimENC/main/screenshots/main.png</image>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://github.com/SnowTimSwiss/TimENC</url>
+  <url type="bugtracker">https://github.com/SnowTimSwiss/TimENC/issues</url>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="2.2.0" date="2026-06-27">
+      <description>
+        <p>TimENC v2.2.0.</p>
+      </description>
+    </release>
+  </releases>
+</component>

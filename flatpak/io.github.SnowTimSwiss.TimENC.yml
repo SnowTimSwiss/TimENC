@@ -1,0 +1,48 @@
+app-id: io.github.SnowTimSwiss.TimENC
+runtime: org.gnome.Platform
+runtime-version: '48'
+sdk: org.gnome.Sdk
+command: timenc
+
+finish-args:
+  # Display
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  # File encryption needs access to the user's files
+  - --filesystem=home
+
+# WebKitGTK (used by Tauri/webkit2gtk) frequently renders a blank window inside
+# the Flatpak sandbox unless the DMABUF renderer is disabled. Keep this unless
+# you have verified rendering works without it.
+modules:
+  - name: timenc
+    buildsystem: simple
+    build-commands:
+      # Extract the Tauri-produced .deb
+      - ar x *.deb
+      - mkdir -p out
+      - tar -C out -xf data.tar.*
+      # Real binary (the deb contains exactly one) -> /app/bin/timenc-bin
+      - install -Dm755 "$(ls out/usr/bin/*)" /app/bin/timenc-bin
+      # Wrapper launched as `timenc` so the WebKit workaround env var is always set
+      - install -Dm755 timenc-wrapper.sh /app/bin/timenc
+      # Icons: rename TimENC.* -> io.github.SnowTimSwiss.TimENC.* under /app
+      - |
+        for f in $(find out/usr/share/icons -type f 2>/dev/null); do
+          dest=$(echo "$f" | sed "s|out/usr/share/icons|/app/share/icons|; s|/TimENC\.|/io.github.SnowTimSwiss.TimENC.|")
+          install -Dm644 "$f" "$dest"
+        done
+      # Desktop entry + AppStream metadata (named after the app-id, as Flatpak requires)
+      - install -Dm644 io.github.SnowTimSwiss.TimENC.desktop /app/share/applications/io.github.SnowTimSwiss.TimENC.desktop
+      - install -Dm644 io.github.SnowTimSwiss.TimENC.metainfo.xml /app/share/metainfo/io.github.SnowTimSwiss.TimENC.metainfo.xml
+    sources:
+      - type: file
+        path: timenc.deb
+      - type: file
+        path: io.github.SnowTimSwiss.TimENC.desktop
+      - type: file
+        path: io.github.SnowTimSwiss.TimENC.metainfo.xml
+      - type: file
+        path: timenc-wrapper.sh
