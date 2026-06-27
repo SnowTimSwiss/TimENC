@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=TimENC
+GenericName=Secure Encryption Tool
+Comment=Secure file encryption with ChaCha20-Poly1305 and Argon2id
+Exec=timenc %F
+Icon=io.github.SnowTimSwiss.TimENC
+Terminal=false
+Categories=Utility;Security;
+Keywords=encryption;crypto;security;chacha20;argon2;
+MimeType=application/x-timenc;
+StartupNotify=true
+StartupWMClass=TimENC
