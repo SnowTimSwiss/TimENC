@@ -1,0 +1,57 @@
+name: Flatpak
+
+# Builds the Flatpak from source the same way Flathub does (offline, against
+# the vendored Cargo registry in flatpak/cargo-sources.json) and validates the
+# AppStream + desktop metadata. This is the gate before a Flathub submission.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'flatpak/**'
+      - '.github/workflows/flatpak.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'flatpak/**'
+      - '.github/workflows/flatpak.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build from source
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Flatpak bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: io.github.SnowTimSwiss.TimENC.flatpak
+          manifest-path: flatpak/io.github.SnowTimSwiss.TimENC.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+
+  validate-metadata:
+    name: Validate metadata
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y appstream desktop-file-utils
+
+      - name: Validate AppStream metainfo
+        run: appstreamcli validate --no-net flatpak/io.github.SnowTimSwiss.TimENC.metainfo.xml
+
+      - name: Validate desktop entry
+        run: desktop-file-validate flatpak/io.github.SnowTimSwiss.TimENC.desktop

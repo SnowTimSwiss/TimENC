@@ -89,12 +89,6 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb
 
-      - name: Upload deb artifact (for Flatpak job)
-        uses: actions/upload-artifact@v4
-        with:
-          name: timenc-deb
-          path: src-tauri/target/release/bundle/deb/*.deb
-
   build-windows:
     runs-on: windows-latest
     permissions:
@@ -203,45 +197,26 @@ jobs:
             src-tauri/target/release/bundle/dmg/*.dmg
 
   build-flatpak:
-    runs-on: ubuntu-24.04
-    needs: build-linux
+    runs-on: ubuntu-latest
     permissions:
       contents: write
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
-      - name: Download deb artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: timenc-deb
-          path: flatpak-build
-
-      - name: Install Flatpak tooling
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
-          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y flathub org.gnome.Platform//48 org.gnome.Sdk//48
-
-      - name: Stage build inputs
-        run: |
-          cp flatpak/io.github.SnowTimSwiss.TimENC.yml flatpak-build/
-          cp flatpak/io.github.SnowTimSwiss.TimENC.desktop flatpak-build/
-          cp flatpak/io.github.SnowTimSwiss.TimENC.metainfo.xml flatpak-build/
-          cp flatpak/timenc-wrapper.sh flatpak-build/
-          mv flatpak-build/*.deb flatpak-build/timenc.deb
-
+      # Builds from source (offline, vendored crates) -- the same manifest used
+      # for Flathub, so the released .flatpak matches what Flathub would ship.
       - name: Build Flatpak bundle
-        run: |
-          cd flatpak-build
-          flatpak-builder --user --disable-rofiles-fuse --force-clean \
-            --repo=repo build-dir io.github.SnowTimSwiss.TimENC.yml
-          flatpak build-bundle repo \
-            "TimENC-${{ github.event.release.tag_name }}.flatpak" \
-            io.github.SnowTimSwiss.TimENC
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: TimENC-${{ github.event.release.tag_name }}.flatpak
+          manifest-path: flatpak/io.github.SnowTimSwiss.TimENC.yml
+          cache-key: flatpak-builder-${{ github.sha }}
 
       - name: Upload Flatpak Asset
         uses: softprops/action-gh-release@v2
         with:
-          files: flatpak-build/TimENC-${{ github.event.release.tag_name }}.flatpak
+          files: TimENC-${{ github.event.release.tag_name }}.flatpak
