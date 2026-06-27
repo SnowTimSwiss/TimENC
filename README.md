@@ -245,3 +245,8 @@ This ensures TimENC stays free, open, and transparent forever, and that improvem
 
 👉 **Download the latest release:**
 [https://github.com/SnowTimSwiss/TimENC/releases/latest](https://github.com/SnowTimSwiss/TimENC/releases/latest)
+
+---
+
+**TimENC** – Built with ❤️
+
