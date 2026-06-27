@@ -220,6 +220,12 @@ pub fn generate_keyfile(output_path: &Path) -> Result<PathBuf> {
     Ok(output_path.to_path_buf())
 }
 
+/// Overwrites a file with zeros before deleting it.
+///
+/// This is best-effort only: on SSDs, copy-on-write or journaling file systems,
+/// and any storage with wear levelling, overwriting in place does not guarantee
+/// the original bytes are gone. It raises the bar against trivial recovery but
+/// is not a substitute for full-disk encryption.
 fn best_effort_secure_delete_file(path: &Path) -> Result<()> {
     if !path.exists() {
         return Ok(());
@@ -243,6 +249,10 @@ fn best_effort_secure_delete_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Returns true if an archive entry path could escape the output directory.
+///
+/// Rejects absolute paths, root or drive prefixes, and `..` segments, and also
+/// rejects paths that contain no normal component at all.
 fn has_unsafe_path_components(path: &Path) -> bool {
     let mut has_normal = false;
 
@@ -257,6 +267,8 @@ fn has_unsafe_path_components(path: &Path) -> bool {
     !has_normal
 }
 
+/// Moves decrypted data from the temporary file into the output directory,
+/// unpacking the tar archive for directories and rejecting unsafe paths.
 fn handle_decrypted_output(
     original_name: String,
     is_dir: bool,
