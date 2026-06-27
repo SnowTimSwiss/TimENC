@@ -3,6 +3,8 @@
 **TimENC** is a modern, cross-platform encryption tool built with Rust and Tauri.
 It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation for strong, authenticated encryption - designed to be secure, simple, and open-source.
 
+![TimENC encrypting a file](Images/Screenshot-Encrypt.png)
+
 ---
 
 ## ✨ Features
@@ -16,10 +18,9 @@ It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation fo
 * **Tamper-resistant headers** (AAD authentication)
 * **Protection against tar path traversal**
 * **Secure memory handling** (zeroize on drop)
-* **Optional best-effort overwrite before deleting source files**
+* **Best-effort overwrite before deleting source files**
 * **Cross-platform desktop GUI (Tauri)**
 * **Cross-platform**: Windows, macOS, Linux
-* **Small binaries** (~10MB vs ~100MB Python version)
 
 ---
 
@@ -96,7 +97,7 @@ still-compressed data when decrypting a compressed file.
 Download the latest release for your platform:
 - **Windows**: `.exe` installer or portable executable
 - **macOS**: `.dmg` disk image
-- **Linux**: `.AppImage`, `.deb`, or binary
+- **Linux**: `.AppImage`, `.deb`, or `.flatpak` bundle
 
 👉 **Download:** [https://github.com/SnowTimSwiss/TimENC/releases/latest](https://github.com/SnowTimSwiss/TimENC/releases/latest)
 
@@ -105,70 +106,6 @@ Download the latest release for your platform:
 
 TimENC supports both GUI and CLI modes. Use the CLI for scripting, automation, or headless environments.
 
-### Basic Usage
-
-```bash
-# Show help
-timenc --help
-
-# Show version
-timenc --version
-```
-
-### Encrypt a File
-
-```bash
-timenc encrypt <input_file> -o <output.timenc> -p <password>
-```
-
-**Example:**
-```bash
-timenc encrypt secret.txt -o secret.timenc -p "MySecurePassword123"
-```
-
-### Encrypt a Folder
-
-```bash
-timenc encrypt <folder_path> -o <output.timenc> -p <password>
-```
-
-**Example:**
-```bash
-timenc encrypt ./my_documents -o backup.timenc -p "MySecurePassword123"
-```
-
-### Decrypt a File
-
-```bash
-timenc decrypt <input.timenc> -o <output_folder> -p <password>
-```
-
-**Example:**
-```bash
-timenc decrypt secret.timenc -o ./decrypted -p "MySecurePassword123"
-```
-
-### Using a Keyfile (Optional)
-
-For additional security, combine a password with a keyfile:
-
-```bash
-# Generate a new keyfile
-timenc generate-keyfile ./mykeyfile.key
-
-# Encrypt with password + keyfile
-timenc encrypt secret.txt -o secret.timenc -p "MyPassword" -k ./mykeyfile.key
-
-# Decrypt with password + keyfile
-timenc decrypt secret.timenc -o ./decrypted -p "MyPassword" -k ./mykeyfile.key
-```
-
-### Compressing Before Encryption (Optional)
-
-For compressible content (text, logs, source code, tarred directories), compress with zstd before encrypting to shrink the output file. Compression is recorded in the encrypted, authenticated metadata, so decryption detects it automatically - no flag needed on the decrypt side.
-
-```bash
-timenc encrypt logs/ -o logs.timenc -p "MyPassword" --compress
 ```
 
 ### CLI Commands Overview
@@ -186,6 +123,7 @@ timenc encrypt logs/ -o logs.timenc -p "MyPassword" --compress
 | `-o, --output` | Output path (file for encrypt, folder for decrypt) |
 | `-p, --password` | Password for encryption/decryption |
 | `-k, --keyfile` | Optional keyfile for additional entropy |
+| `--compress` | Compress with zstd before encrypting (encrypt only) |
 | `--delete-source` | Delete source file after operation |
 | `-h, --help` | Show help message |
 | `-v, --version` | Show version information |
@@ -203,20 +141,32 @@ timenc encrypt logs/ -o logs.timenc -p "MyPassword" --compress
 
 ---
 
-## 🔀 Compatibility
+## 🛠️ Building from Source
 
-| Feature | Python TimENC (v1.x) | Rust TimENC (v2.x) |
-|---------|---------------------|-------------------|
-| **V2 Decryption** | ✅ | ❌ |
-| **V3 Decryption** | ✅ | ✅ |
-| **V4 Decryption** | ❌ | ✅ |
-| **V4.5 Decryption** | ❌ | ✅ |
-| **V2 Encryption** | ✅ | ❌ (deprecated) |
-| **V3 Encryption** | ✅ | ❌ (legacy) |
-| **V4 Encryption** | ❌ | ❌ (legacy) |
-| **V4.5 Encryption** | ❌ | ✅ (default) |
-| **Keyfile Format** | 32 Bytes | 32 Bytes (compatible) |
-| **Argon2 Parameters** | time=4, mem=128MB, parallel=4 | v4 defaults, versioned in header |
+You need a [Rust toolchain](https://rustup.rs/) and the
+[Tauri CLI](https://tauri.app/) (`cargo install tauri-cli --locked`).
+On Linux, install the Tauri system dependencies (WebKitGTK, GTK, etc.) for your
+distribution first.
+
+```bash
+# Clone
+git clone https://github.com/SnowTimSwiss/TimENC.git
+cd TimENC
+
+# Run the GUI in development
+cd src-tauri && cargo tauri dev
+
+# Build release bundles for your platform
+cargo tauri build
+```
+
+### Testing
+
+The core crypto and file-format logic is covered by integration tests:
+
+```bash
+cargo test
+```
 
 ---
 
@@ -249,4 +199,3 @@ This ensures TimENC stays free, open, and transparent forever, and that improvem
 ---
 
 **TimENC** – Built with ❤️
-
