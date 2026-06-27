@@ -27,12 +27,10 @@
 
   <launchable type="desktop-id">io.github.SnowTimSwiss.TimENC.desktop</launchable>
 
-  <!-- TODO (Flathub): at least one screenshot on a public URL is required.
-       Replace the URL below with a real screenshot before submitting. -->
   <screenshots>
     <screenshot type="default">
-      <caption>The TimENC main window</caption>
-      <image>https://raw.githubusercontent.com/SnowTimSwiss/TimENC/main/screenshots/main.png</image>
+      <caption>Encrypting a file in TimENC</caption>
+      <image>https://raw.githubusercontent.com/SnowTimSwiss/TimENC/main/Images/Screenshot-Encrypt.png</image>
     </screenshot>
   </screenshots>
 
