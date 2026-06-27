@@ -46,38 +46,6 @@
       overflow: hidden;
     }
 
-    .header {
-      padding: 20px 28px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .logo-icon {
-      width: 32px;
-      height: 32px;
-      background: linear-gradient(135deg, var(--accent), #1f6feb);
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      font-size: 16px;
-      color: white;
-    }
-
-    .logo-text {
-      font-size: 1.25rem;
-      font-weight: 600;
-    }
-
     .status {
       padding: 6px 14px;
       border-radius: 12px;
@@ -98,12 +66,17 @@
 
     .nav {
       display: flex;
+      align-items: center;
       border-bottom: 1px solid var(--border);
+      padding: 0 14px;
+    }
+
+    .nav .status {
+      margin-left: auto;
     }
 
     .nav-btn {
-      flex: 1;
-      padding: 12px;
+      padding: 12px 16px;
       background: transparent;
       border: none;
       color: var(--text-secondary);
@@ -310,10 +283,6 @@
     }
 
     @media (max-width: 600px) {
-      .header {
-        padding: 16px 20px;
-      }
-      
       .content {
         padding: 20px;
       }
@@ -334,19 +303,12 @@
 </head>
 <body>
   <div class="container">
-    <header class="header">
-      <div class="logo">
-        <div class="logo-icon">🔐</div>
-        <div class="logo-text">TimENC</div>
-      </div>
-      <div id="status" class="status">Ready</div>
-    </header>
-    
     <nav class="nav">
       <button class="nav-btn active" data-page="encrypt" id="nav-encrypt">Encrypt</button>
-      <button class="nav-btn" data-page="decrypt" data-page="decrypt" id="nav-decrypt">Decrypt</button>
+      <button class="nav-btn" data-page="decrypt" id="nav-decrypt">Decrypt</button>
       <button class="nav-btn" data-page="tools" id="nav-tools">Tools</button>
       <button class="nav-btn" data-page="settings" id="nav-settings">Settings</button>
+      <div id="status" class="status">Ready</div>
     </nav>
     
     <div class="content">
