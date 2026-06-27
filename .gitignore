@@ -2,12 +2,15 @@
 /target/
 **/*.rs.bk
 *.pdb
-Cargo.lock
+# Only ignore the root library crate's lockfile; the Tauri app crate's
+# lockfile (src-tauri/Cargo.lock) is tracked for reproducible Flatpak builds.
+/Cargo.lock
 
 # Tauri
 src-tauri/target/
-src-tauri/Cargo.lock
 **/target/
+# NOTE: src-tauri/Cargo.lock is intentionally tracked (see below) so the
+# Flatpak/Flathub build can vendor exact dependency versions offline.
 
 # IDE
 .idea/
