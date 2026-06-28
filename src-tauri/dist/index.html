@@ -995,7 +995,7 @@
       const btn = e.currentTarget.querySelector(".btn-primary");
       runForm(btn, async () => {
         const outputPath = getFieldValue("keyfile-output");
-        const r = await invoke("create_keyfile", { output_path: outputPath });
+        const r = await invoke("create_keyfile", { outputPath: outputPath });
         if (r && r.success !== false && outputPath) {
           document.getElementById("enc-keyfile").value = outputPath;
           document.getElementById("dec-keyfile").value = outputPath;
