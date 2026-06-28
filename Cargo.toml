@@ -1,6 +1,6 @@
 [package]
 name = "timenc"
-version = "2.2.1"
+version = "2.2.2"
 edition = "2021"
 authors = ["TimENC Contributors"]
 description = "Secure file encryption with ChaCha20-Poly1305 and Argon2id"

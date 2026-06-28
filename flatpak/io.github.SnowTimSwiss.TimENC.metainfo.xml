@@ -40,6 +40,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="2.2.2" date="2026-06-28">
+      <description>
+        <p>Fix decryption failing inside the Flatpak sandbox (cross-device link error).</p>
+      </description>
+    </release>
     <release version="2.2.1" date="2026-06-27">
       <description>
         <p>Transparent app icon and a more compact window layout.</p>

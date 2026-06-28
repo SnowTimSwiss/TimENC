@@ -129,10 +129,17 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
         None
     };
 
+    // The temp file holding the decrypted plaintext must live on the same
+    // filesystem as output_dir so it can be moved into place with a rename().
+    // Under Flatpak, /tmp is a sandbox-private mount distinct from the host
+    // directories exposed to the app, so renaming across them fails with EXDEV
+    // ("Invalid cross-device link", os error 18).
+    fs::create_dir_all(&options.output_dir)?;
+
     let result = match version {
         3 => {
             let (header, _header_len) = Header::read_from(&mut file)?;
-            let temp_file = NamedTempFile::new()?;
+            let temp_file = NamedTempFile::new_in(&options.output_dir)?;
             let temp_path = temp_file.path().to_path_buf();
 
             let mut temp_file_handle = File::create(&temp_path)?;
@@ -162,7 +169,7 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
                 keyfile_bytes.as_deref(),
             )?;
 
-            let temp_file = NamedTempFile::new()?;
+            let temp_file = NamedTempFile::new_in(&options.output_dir)?;
             let temp_path = temp_file.path().to_path_buf();
             let temp_file_handle = File::create(&temp_path)?;
             if metadata.compressed {
