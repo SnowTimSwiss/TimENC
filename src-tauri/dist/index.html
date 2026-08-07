@@ -413,7 +413,7 @@
     }
 
     .result-box {
-      margin-top: 20px;
+      margin-top: 0;
       padding: 12px;
       background: var(--bg-primary);
       border: 1px solid var(--border);
@@ -464,6 +464,28 @@
     .select:focus {
       outline: none;
       border-color: var(--accent);
+    }
+
+    /* Short explanatory line under a page title. */
+    .page-hint {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin: -6px 0 14px;
+      line-height: 1.4;
+    }
+
+    /* Same card treatment as a switch row, for non-interactive blocks. */
+    .card {
+      padding: 12px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .card-label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin-bottom: 8px;
     }
 
     .hidden {
@@ -599,7 +621,10 @@
       <section id="page-decrypt" class="page">
         <h2 class="page-title" id="dec-title">Decrypt</h2>
         
+        <p class="page-hint" id="dec-hint">Handles every format TimENC has written: v3, v4, v4.5 and v6.</p>
+
         <form id="decrypt-form">
+         <div class="form-grid">
           <div class="form-group">
             <label class="form-label" id="dec-input-label">Encrypted file</label>
             <div class="input-row">
@@ -607,7 +632,7 @@
               <button type="button" class="btn" id="dec-browse-input">Browse</button>
             </div>
           </div>
-          
+
           <div class="form-group">
             <label class="form-label" id="dec-output-label">Output folder</label>
             <div class="input-row">
@@ -615,28 +640,27 @@
               <button type="button" class="btn" id="dec-browse-output">Browse</button>
             </div>
           </div>
-          
-          <div class="grid-2">
-            <div class="form-group">
-              <label class="form-label" id="dec-password-label">Password</label>
-              <div class="input-row">
-                <input type="password" class="input" id="dec-password" required>
-                <button type="button" class="btn" data-toggle="dec-password">Show</button>
-              </div>
-            </div>
-            
-            <div class="form-group">
-              <label class="form-label" id="dec-keyfile-label">Keyfile (optional)</label>
-              <div class="input-row">
-                <input type="text" class="input" id="dec-keyfile" placeholder="Select keyfile">
-                <button type="button" class="btn" id="dec-browse-keyfile">Browse</button>
-              </div>
+
+          <div class="form-group">
+            <label class="form-label" id="dec-password-label">Password</label>
+            <div class="input-row">
+              <input type="password" class="input" id="dec-password" required>
+              <button type="button" class="btn" data-toggle="dec-password">Show</button>
             </div>
           </div>
-          
-          <div style="margin-top: 24px">
+
+          <div class="form-group">
+            <label class="form-label" id="dec-keyfile-label">Keyfile (optional)</label>
+            <div class="input-row">
+              <input type="text" class="input" id="dec-keyfile" placeholder="Select keyfile">
+              <button type="button" class="btn" id="dec-browse-keyfile">Browse</button>
+            </div>
+          </div>
+
+          <div class="form-group full-width" style="margin: 6px 0 0">
             <button type="submit" class="btn btn-success" style="width: 100%; padding: 12px;" id="dec-submit">Decrypt</button>
           </div>
+         </div>
         </form>
       </section>
       
@@ -644,21 +668,25 @@
       <section id="page-tools" class="page">
         <h2 class="page-title" id="tools-title">Tools</h2>
         
-        <form id="keyfile-form">
-          <div class="form-group">
-            <label class="form-label" id="keyfile-label">Keyfile path</label>
-            <div class="input-row">
-              <input type="text" class="input" id="keyfile-output" placeholder="Select location" required>
-              <button type="button" class="btn" id="keyfile-save-output">Save As</button>
+        <p class="page-hint" id="tools-hint">A keyfile is 32 random bytes used alongside your password. Both are needed to decrypt - keep it somewhere separate.</p>
+
+        <div class="form-grid">
+          <form id="keyfile-form">
+            <div class="form-group">
+              <label class="form-label" id="keyfile-label">Keyfile path</label>
+              <div class="input-row">
+                <input type="text" class="input" id="keyfile-output" placeholder="Select location" required>
+                <button type="button" class="btn" id="keyfile-save-output">Save As</button>
+              </div>
             </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;" id="keyfile-submit">Generate Keyfile</button>
+          </form>
+
+          <div class="form-group">
+            <label class="form-label" id="result-label">Last Result</label>
+            <div class="result-box" id="result">No operation run yet.</div>
           </div>
-          
-          <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;" id="keyfile-submit">Generate Keyfile</button>
-        </form>
-        
-        <div class="form-group">
-          <label class="form-label" id="result-label">Last Result</label>
-          <div class="result-box" id="result">No operation run yet.</div>
         </div>
       </section>
       
@@ -666,17 +694,23 @@
       <section id="page-settings" class="page">
         <h2 class="page-title" id="settings-title">Settings</h2>
         
-        <div class="settings-group">
-          <div class="settings-label" id="lang-label">Language</div>
-          <select class="select" id="language-select">
-            <option value="en">English</option>
-            <option value="de">Deutsch</option>
-          </select>
-        </div>
-        
-        <div class="settings-group">
-          <div class="settings-label" id="version-label">Version</div>
-          <div class="settings-desc" id="version-desc">TimENC v3.0.0 - v6 encryption defaults</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <div class="card">
+              <div class="card-label" id="lang-label">Language</div>
+              <select class="select" id="language-select" style="width: 100%">
+                <option value="en">English</option>
+                <option value="de">Deutsch</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="card">
+              <div class="card-label" id="version-label">Version</div>
+              <div class="settings-desc" id="version-desc" style="margin: 0">TimENC v3.0.0 - v6 encryption defaults</div>
+            </div>
+          </div>
         </div>
       </section>
     </div>
@@ -713,6 +747,7 @@
         },
         decrypt: {
           title: "Decrypt",
+          hint: "Handles every format TimENC has written: v3, v4, v4.5 and v6.",
           inputLabel: "Encrypted file",
           inputPlaceholder: "Select .timenc file",
           outputLabel: "Output folder",
@@ -722,6 +757,7 @@
         },
         tools: {
           title: "Tools",
+          hint: "A keyfile is 32 random bytes used alongside your password. Both are needed to decrypt - keep it somewhere separate.",
           label: "Keyfile path",
           placeholder: "Select location",
           saveAsBtn: "Save As",
@@ -775,6 +811,7 @@
         },
         decrypt: {
           title: "Entschlüsseln",
+          hint: "Liest jedes Format, das TimENC je geschrieben hat: v3, v4, v4.5 und v6.",
           inputLabel: "Verschlüsselte Datei",
           inputPlaceholder: ".timenc-Datei auswählen",
           outputLabel: "Zielordner",
@@ -784,6 +821,7 @@
         },
         tools: {
           title: "Werkzeuge",
+          hint: "Ein Keyfile sind 32 zufällige Bytes zusätzlich zum Passwort. Zum Entschlüsseln braucht es beides - bewahre es getrennt auf.",
           label: "Keyfile-Pfad",
           placeholder: "Speicherort auswählen",
           saveAsBtn: "Speichern als",
@@ -976,6 +1014,7 @@
       document.getElementById("enc-submit").textContent = t("encrypt", "submitBtn");
       
       document.getElementById("dec-title").textContent = t("decrypt", "title");
+      document.getElementById("dec-hint").textContent = t("decrypt", "hint");
       document.getElementById("dec-input-label").textContent = t("decrypt", "inputLabel");
       document.getElementById("dec-input").placeholder = t("decrypt", "inputPlaceholder");
       document.getElementById("dec-browse-input").textContent = t("decrypt", "browseBtn");
@@ -988,6 +1027,7 @@
       document.getElementById("dec-submit").textContent = t("decrypt", "submitBtn");
       
       document.getElementById("tools-title").textContent = t("tools", "title");
+      document.getElementById("tools-hint").textContent = t("tools", "hint");
       document.getElementById("keyfile-label").textContent = t("tools", "label");
       document.getElementById("keyfile-output").placeholder = t("tools", "placeholder");
       document.getElementById("keyfile-save-output").textContent = t("tools", "saveAsBtn");
