@@ -34,6 +34,8 @@ fn test_encrypt_decrypt_file_roundtrip() {
         keyfile_path: None,
         output_path: output_path.clone(),
         compress: false,
+        kdf_profile: Default::default(),
+        pad: false,
     };
     
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -55,7 +57,7 @@ fn test_encrypt_decrypt_file_roundtrip() {
 }
 
 #[test]
-fn test_encrypt_uses_v4_5_format() {
+fn test_encrypt_uses_v6_format() {
     let original_content = b"Version check";
     let password = "test_password_123";
 
@@ -68,6 +70,8 @@ fn test_encrypt_uses_v4_5_format() {
         keyfile_path: None,
         output_path: output_path.clone(),
         compress: false,
+        kdf_profile: Default::default(),
+        pad: false,
     };
 
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -77,7 +81,11 @@ fn test_encrypt_uses_v4_5_format() {
     use std::io::Read;
     file.read_exact(&mut header).expect("Failed to read header");
     assert_eq!(&header[0..6], b"TIMENC");
-    assert_eq!(header[6], 5);
+    assert_eq!(
+        header[6],
+        timenc::format::v6::FORMAT_VERSION_V6,
+        "new files must be written in the v6 format"
+    );
 }
 
 #[test]
@@ -102,6 +110,8 @@ fn test_encrypt_decrypt_with_keyfile() {
         keyfile_path: Some(keyfile_path.clone()),
         output_path: output_path.clone(),
         compress: false,
+        kdf_profile: Default::default(),
+        pad: false,
     };
     
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -140,6 +150,8 @@ fn test_decrypt_wrong_password() {
         keyfile_path: None,
         output_path: output_path.clone(),
         compress: false,
+        kdf_profile: Default::default(),
+        pad: false,
     };
     
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -179,6 +191,8 @@ fn test_encrypt_decrypt_directory() {
         keyfile_path: None,
         output_path: output_path.clone(),
         compress: false,
+        kdf_profile: Default::default(),
+        pad: false,
     };
     
     encrypt(&input_dir, encrypt_options).expect("Encryption failed");
@@ -382,7 +396,8 @@ fn test_decrypt_python_v3_file() {
         header.memory_kib,
         header.parallelism,
         None,
-    );
+    )
+    .expect("legacy v3 derivation should succeed");
 
     let mut encrypted = header.to_bytes().expect("header serialization should succeed");
     let plaintext = b"python-v3-compatible";
@@ -422,6 +437,8 @@ fn test_encrypt_decrypt_with_compression_roundtrip() {
         keyfile_path: None,
         output_path: output_path.clone(),
         compress: true,
+        kdf_profile: Default::default(),
+        pad: false,
     };
 
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -501,7 +518,7 @@ fn test_decrypt_rejects_unknown_future_version() {
     let metadata_len =
         (metadata.to_bytes().expect("metadata bytes").len() + timenc::crypto::TAG_SIZE) as u32;
     let mut header = timenc::format::v4::Header::new(metadata_len, salt, metadata_nonce, data_nonce);
-    header.version = 6;
+    header.version = 7;
 
     let mut encrypted = header.to_bytes().expect("header bytes");
     encrypted.extend_from_slice(&[0u8; 64]); // placeholder payload, never read
@@ -522,4 +539,257 @@ fn test_decrypt_rejects_unknown_future_version() {
 
     assert!(result.is_err());
     assert!(encrypted_path.exists(), "source file must be preserved when decryption fails");
+}
+
+#[test]
+fn test_decrypt_rejects_truncated_file_end_to_end() {
+    // The v6 termination check has to hold for real files produced by
+    // `encrypt`, not only at the format layer: a payload spanning several
+    // chunks, cut at a chunk boundary, must be refused.
+    let original_content = vec![0x5Au8; 3 * timenc::format::CHUNK_SIZE + 4096];
+    let password = "truncation_test";
+
+    let (input_path, _input_temp) = setup_test_file(&original_content);
+    let encrypt_temp = tempfile::tempdir().expect("Failed to create encrypt temp dir");
+    let decrypt_temp = tempfile::tempdir().expect("Failed to create decrypt temp dir");
+    let output_path = encrypt_temp.path().join("truncated.timenc");
+
+    encrypt(
+        &input_path,
+        EncryptOptions {
+            password: password.to_string(),
+            keyfile_path: None,
+            output_path: output_path.clone(),
+            compress: false,
+            kdf_profile: Default::default(),
+            pad: false,
+        },
+    )
+    .expect("Encryption failed");
+
+    // Cut off the final chunk, leaving every remaining tag intact.
+    let full = fs::read(&output_path).expect("Failed to read encrypted file");
+    let final_chunk_len = 4096 + timenc::crypto::TAG_SIZE;
+    fs::write(&output_path, &full[..full.len() - final_chunk_len])
+        .expect("Failed to truncate encrypted file");
+
+    let result = decrypt(
+        &output_path,
+        DecryptOptions {
+            password: password.to_string(),
+            keyfile_path: None,
+            output_dir: decrypt_temp.path().to_path_buf(),
+        },
+    );
+
+    assert!(
+        matches!(result, Err(timenc::Error::TruncatedFile)),
+        "expected TruncatedFile, got {result:?}"
+    );
+    assert!(
+        output_path.exists(),
+        "source file must be preserved when decryption fails"
+    );
+}
+
+#[test]
+fn test_encrypt_decrypt_with_padding_roundtrip() {
+    let original_content = b"pad me so the file size says less".repeat(40);
+    let password = "padding_test";
+
+    let (input_path, _input_temp) = setup_test_file(&original_content);
+    let encrypt_temp = tempfile::tempdir().expect("Failed to create encrypt temp dir");
+    let decrypt_temp = tempfile::tempdir().expect("Failed to create decrypt temp dir");
+    let output_path = encrypt_temp.path().join("padded.timenc");
+
+    encrypt(
+        &input_path,
+        EncryptOptions {
+            password: password.to_string(),
+            keyfile_path: None,
+            output_path: output_path.clone(),
+            compress: false,
+            kdf_profile: Default::default(),
+            pad: true,
+        },
+    )
+    .expect("Encryption failed");
+
+    let padded_size = fs::metadata(&output_path).expect("metadata").len();
+    let expected_payload = timenc::format::v6::padme(original_content.len() as u64);
+    assert!(
+        padded_size > original_content.len() as u64,
+        "padded output should be larger than the plaintext"
+    );
+    assert!(
+        expected_payload > original_content.len() as u64,
+        "this input size should actually get padded"
+    );
+
+    let result_path = decrypt(
+        &output_path,
+        DecryptOptions {
+            password: password.to_string(),
+            keyfile_path: None,
+            output_dir: decrypt_temp.path().to_path_buf(),
+        },
+    )
+    .expect("Decryption failed");
+
+    let decrypted = fs::read(&result_path).expect("Failed to read decrypted file");
+    assert_eq!(
+        decrypted, original_content,
+        "padding must be stripped exactly"
+    );
+}
+
+#[test]
+fn test_encrypt_decrypt_with_padding_and_compression_and_keyfile() {
+    // All three optional features at once: compression changes the payload
+    // length that padding is computed from, and the keyfile changes the key.
+    let original_content = b"compressible ".repeat(3000);
+    let password = "combined_test";
+
+    let (input_path, _input_temp) = setup_test_file(&original_content);
+    let encrypt_temp = tempfile::tempdir().expect("Failed to create encrypt temp dir");
+    let decrypt_temp = tempfile::tempdir().expect("Failed to create decrypt temp dir");
+    let output_path = encrypt_temp.path().join("combined.timenc");
+    let keyfile_path = encrypt_temp.path().join("key.bin");
+
+    generate_keyfile(&keyfile_path).expect("keyfile generation failed");
+
+    encrypt(
+        &input_path,
+        EncryptOptions {
+            password: password.to_string(),
+            keyfile_path: Some(keyfile_path.clone()),
+            output_path: output_path.clone(),
+            compress: true,
+            kdf_profile: Default::default(),
+            pad: true,
+        },
+    )
+    .expect("Encryption failed");
+
+    // Compression must still win despite the padding overhead.
+    let encrypted_size = fs::metadata(&output_path).expect("metadata").len();
+    assert!(
+        encrypted_size < original_content.len() as u64,
+        "compressed+padded output ({encrypted_size}) should beat the plaintext"
+    );
+
+    // The keyfile is required.
+    assert!(decrypt(
+        &output_path,
+        DecryptOptions {
+            password: password.to_string(),
+            keyfile_path: None,
+            output_dir: decrypt_temp.path().to_path_buf(),
+        },
+    )
+    .is_err());
+
+    let result_path = decrypt(
+        &output_path,
+        DecryptOptions {
+            password: password.to_string(),
+            keyfile_path: Some(keyfile_path),
+            output_dir: decrypt_temp.path().to_path_buf(),
+        },
+    )
+    .expect("Decryption failed");
+
+    assert_eq!(
+        fs::read(&result_path).expect("Failed to read decrypted file"),
+        original_content
+    );
+}
+
+#[test]
+fn test_encrypt_decrypt_directory_with_padding() {
+    let password = "dir_padding_test";
+    let source_temp = tempfile::tempdir().expect("Failed to create temp dir");
+    let dir_path = source_temp.path().join("payload_dir");
+    fs::create_dir_all(dir_path.join("nested")).expect("Failed to create nested dir");
+    fs::write(dir_path.join("a.txt"), b"first file").expect("Failed to write file");
+    fs::write(dir_path.join("nested/b.txt"), b"second file").expect("Failed to write file");
+
+    let encrypt_temp = tempfile::tempdir().expect("Failed to create encrypt temp dir");
+    let decrypt_temp = tempfile::tempdir().expect("Failed to create decrypt temp dir");
+    let output_path = encrypt_temp.path().join("dir.timenc");
+
+    encrypt(
+        &dir_path,
+        EncryptOptions {
+            password: password.to_string(),
+            keyfile_path: None,
+            output_path: output_path.clone(),
+            compress: true,
+            kdf_profile: Default::default(),
+            pad: true,
+        },
+    )
+    .expect("Encryption failed");
+    assert!(!dir_path.exists(), "source directory should be removed");
+
+    decrypt(
+        &output_path,
+        DecryptOptions {
+            password: password.to_string(),
+            keyfile_path: None,
+            output_dir: decrypt_temp.path().to_path_buf(),
+        },
+    )
+    .expect("Decryption failed");
+
+    let restored = decrypt_temp.path().join("payload_dir");
+    assert_eq!(
+        fs::read(restored.join("a.txt")).expect("Failed to read a.txt"),
+        b"first file"
+    );
+    assert_eq!(
+        fs::read(restored.join("nested/b.txt")).expect("Failed to read b.txt"),
+        b"second file"
+    );
+}
+
+#[test]
+fn test_decrypt_rejects_tampered_v6_payload() {
+    let original_content = b"integrity matters";
+    let password = "tamper_test";
+
+    let (input_path, _input_temp) = setup_test_file(original_content);
+    let encrypt_temp = tempfile::tempdir().expect("Failed to create encrypt temp dir");
+    let decrypt_temp = tempfile::tempdir().expect("Failed to create decrypt temp dir");
+    let output_path = encrypt_temp.path().join("tampered.timenc");
+
+    encrypt(
+        &input_path,
+        EncryptOptions {
+            password: password.to_string(),
+            keyfile_path: None,
+            output_path: output_path.clone(),
+            compress: false,
+            kdf_profile: Default::default(),
+            pad: false,
+        },
+    )
+    .expect("Encryption failed");
+
+    let mut encrypted = fs::read(&output_path).expect("Failed to read encrypted file");
+    let last = encrypted.len() - 1;
+    encrypted[last] ^= 0x01;
+    fs::write(&output_path, &encrypted).expect("Failed to write tampered file");
+
+    let result = decrypt(
+        &output_path,
+        DecryptOptions {
+            password: password.to_string(),
+            keyfile_path: None,
+            output_dir: decrypt_temp.path().to_path_buf(),
+        },
+    );
+
+    assert!(matches!(result, Err(timenc::Error::DecryptionFailed)));
+    assert!(output_path.exists(), "source file must be preserved");
 }

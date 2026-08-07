@@ -20,6 +20,29 @@ pub enum Error {
     #[error("Decryption failed - wrong password/keyfile or tampered file")]
     DecryptionFailed,
 
+    /// The ciphertext ended before the chunk marked as final.
+    ///
+    /// Distinct from [`Error::DecryptionFailed`] because every individual
+    /// authentication tag may still have verified: the file was cut at a chunk
+    /// boundary, which only the per-chunk `is_final` marker detects.
+    #[error("File is truncated - the encrypted stream ends before its final chunk")]
+    TruncatedFile,
+
+    #[error("Trailing data after the final encrypted chunk")]
+    TrailingData,
+
+    #[error("Key derivation failed: {0}")]
+    KeyDerivation(String),
+
+    #[error("Rejected Argon2 parameters from file header: {0}")]
+    InvalidKdfParameters(String),
+
+    #[error("Metadata block too large ({len} bytes) - refusing to allocate")]
+    MetadataTooLarge { len: u64 },
+
+    #[error("Payload length mismatch: header says {expected} bytes, stream has {actual}")]
+    PayloadLengthMismatch { expected: u64, actual: u64 },
+
     #[error("File already exists: {path}")]
     FileExists { path: String },
 

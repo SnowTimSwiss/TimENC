@@ -1,6 +1,6 @@
 //! File-level encryption, decryption, and keyfile operations.
 
-use crate::crypto;
+use crate::crypto::{self, KdfProfile};
 use crate::error::{Error, Result};
 use crate::format::{self, Header};
 use std::fs::{self, File, OpenOptions};
@@ -16,6 +16,25 @@ pub struct EncryptOptions {
     pub keyfile_path: Option<PathBuf>,
     pub output_path: PathBuf,
     pub compress: bool,
+    /// Argon2id cost profile to record in the header.
+    pub kdf_profile: KdfProfile,
+    /// Pad the payload so the ciphertext size does not reveal the exact
+    /// plaintext size.
+    pub pad: bool,
+}
+
+impl EncryptOptions {
+    /// Options with the default cost profile and no compression or padding.
+    pub fn new(password: String, output_path: PathBuf) -> Self {
+        Self {
+            password,
+            keyfile_path: None,
+            output_path,
+            compress: false,
+            kdf_profile: KdfProfile::default(),
+            pad: false,
+        }
+    }
 }
 
 /// Inputs needed for a decryption run.
@@ -41,20 +60,48 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
         .to_string_lossy()
         .to_string();
 
-    let (input_file, _temp_dir) = if is_dir {
-        let temp_dir = tempfile::tempdir()?;
-        let tar_path = temp_dir.path().join(format!("{}.tar", original_name));
-        
+    // Holds the tar archive and/or the compressed intermediate. Kept alive
+    // until encryption finishes.
+    let mut temp_dir = None;
+
+    let mut payload_source = if is_dir {
+        let dir = tempfile::tempdir()?;
+        let tar_path = dir.path().join(format!("{}.tar", original_name));
+
         let tar_file = File::create(&tar_path)?;
         let mut tar_builder = tar::Builder::new(tar_file);
         tar_builder.append_dir_all(&original_name, input_path)?;
         tar_builder.finish()?;
         drop(tar_builder);
-        
-        (tar_path, Some(temp_dir))
+
+        temp_dir = Some(dir);
+        tar_path
     } else {
-        (input_path.to_path_buf(), None)
+        input_path.to_path_buf()
     };
+
+    // v6 records the exact payload length in the encrypted metadata, which is
+    // written before the payload. Compression therefore has to happen up front
+    // rather than streaming through the encryptor: its output size is not known
+    // until it is done.
+    if options.compress {
+        let dir = match temp_dir {
+            Some(dir) => dir,
+            None => tempfile::tempdir()?,
+        };
+        let compressed_path = dir.path().join("payload.zst");
+
+        let mut plain = File::open(&payload_source)?;
+        let mut compressed = File::create(&compressed_path)?;
+        zstd::stream::copy_encode(&mut plain, &mut compressed, 0)?;
+        compressed.flush()?;
+        drop(compressed);
+
+        temp_dir = Some(dir);
+        payload_source = compressed_path;
+    }
+
+    let payload_len = fs::metadata(&payload_source)?.len();
 
     let keyfile_bytes = if let Some(ref keyfile_path) = options.keyfile_path {
         Some(fs::read(keyfile_path)?)
@@ -63,39 +110,40 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
     };
 
     let salt = crypto::generate_salt();
-    let metadata_nonce = crypto::generate_nonce();
-    let data_nonce = crypto::generate_nonce();
+    let kdf = options.kdf_profile.params();
 
-    let metadata = format::v4::Metadata::new(original_name.clone(), is_dir, options.compress);
-    let metadata_len = (metadata.to_bytes()?.len() + crypto::TAG_SIZE) as u32;
-    let header = format::v4::Header::new(metadata_len, salt, metadata_nonce, data_nonce);
+    // One Argon2id run for the whole file; the metadata and data keys are
+    // separate subkeys of its output.
+    let keys = format::v6::derive_file_keys(
+        options.password.as_bytes(),
+        keyfile_bytes.as_deref(),
+        &salt,
+        kdf,
+    )?;
+
+    let metadata = format::v6::Metadata::new(
+        original_name.clone(),
+        is_dir,
+        options.compress,
+        payload_len,
+    );
 
     let mut output_file = File::create(&options.output_path)?;
+    let mut payload = File::open(&payload_source)?;
+    format::v6::encrypt_streaming(
+        &mut payload,
+        &mut output_file,
+        salt,
+        kdf,
+        &metadata,
+        &keys,
+        options.pad,
+    )?;
 
-    let plain_input = File::open(&input_file)?;
-    if options.compress {
-        let mut compressing_reader = zstd::stream::read::Encoder::new(plain_input, 0)?;
-        format::v4::encrypt_streaming(
-            &mut compressing_reader,
-            &mut output_file,
-            &header,
-            &metadata,
-            options.password.as_bytes(),
-            keyfile_bytes.as_deref(),
-        )?;
-    } else {
-        let mut input_file_handle = plain_input;
-        format::v4::encrypt_streaming(
-            &mut input_file_handle,
-            &mut output_file,
-            &header,
-            &metadata,
-            options.password.as_bytes(),
-            keyfile_bytes.as_deref(),
-        )?;
-    }
-
+    drop(payload);
+    output_file.flush()?;
     drop(output_file);
+    drop(temp_dir);
 
     if is_dir {
         fs::remove_dir_all(input_path)?;
@@ -191,6 +239,55 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
                     options.password.as_bytes(),
                     keyfile_bytes.as_deref(),
                 )?;
+            }
+
+            handle_decrypted_output(
+                metadata.original_name,
+                metadata.is_dir,
+                &temp_path,
+                &options.output_dir,
+            )
+        }
+        6 => {
+            let (header, _header_len) = format::v6::Header::read_from(&mut file)?;
+
+            let keys = format::v6::derive_file_keys(
+                options.password.as_bytes(),
+                keyfile_bytes.as_deref(),
+                &header.salt,
+                header.kdf,
+            )?;
+            // Rejects a wrong password or keyfile before any ciphertext is
+            // touched, and pins the file to exactly one key.
+            header.verify_commitment(&keys)?;
+
+            let mut encrypted_metadata = vec![0u8; header.metadata_len as usize];
+            file.read_exact(&mut encrypted_metadata)?;
+            let metadata = format::v6::decrypt_metadata(&encrypted_metadata, &header, &keys)?;
+
+            let temp_file = NamedTempFile::new_in(&options.output_dir)?;
+            let temp_path = temp_file.path().to_path_buf();
+            let temp_file_handle = File::create(&temp_path)?;
+            if metadata.compressed {
+                let mut decompressing_writer = zstd::stream::write::Decoder::new(temp_file_handle)?;
+                format::v6::decrypt_streaming(
+                    &mut file,
+                    &mut decompressing_writer,
+                    &header,
+                    &metadata,
+                    &keys,
+                )?;
+                decompressing_writer.flush()?;
+            } else {
+                let mut temp_file_handle = temp_file_handle;
+                format::v6::decrypt_streaming(
+                    &mut file,
+                    &mut temp_file_handle,
+                    &header,
+                    &metadata,
+                    &keys,
+                )?;
+                temp_file_handle.flush()?;
             }
 
             handle_decrypted_output(

@@ -6,7 +6,25 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State};
-use timenc::{encrypt, decrypt, generate_keyfile, EncryptOptions, DecryptOptions};
+use timenc::{encrypt, decrypt, generate_keyfile, EncryptOptions, DecryptOptions, KdfProfile};
+
+/// Argon2id cost profile as sent by the frontend.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KdfProfileRequest {
+    #[default]
+    Balanced,
+    Paranoid,
+}
+
+impl From<KdfProfileRequest> for KdfProfile {
+    fn from(request: KdfProfileRequest) -> Self {
+        match request {
+            KdfProfileRequest::Balanced => KdfProfile::Balanced,
+            KdfProfileRequest::Paranoid => KdfProfile::Paranoid,
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EncryptRequest {
@@ -16,6 +34,10 @@ pub struct EncryptRequest {
     keyfile_path: Option<PathBuf>,
     #[serde(default)]
     compress: bool,
+    #[serde(default)]
+    kdf_profile: KdfProfileRequest,
+    #[serde(default)]
+    pad: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -79,6 +101,8 @@ async fn encrypt_file(request: EncryptRequest) -> Result<OperationResult, String
         keyfile_path: request.keyfile_path,
         output_path: request.output_path,
         compress: request.compress,
+        kdf_profile: request.kdf_profile.into(),
+        pad: request.pad,
     };
 
     match encrypt(&request.input_path, options) {

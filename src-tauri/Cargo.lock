@@ -4408,13 +4408,15 @@ dependencies = [
 
 [[package]]
 name = "timenc"
-version = "2.2.2"
+version = "3.0.0"
 dependencies = [
  "argon2",
+ "blake2",
  "chacha20poly1305",
  "clap",
  "dirs 5.0.1",
  "rand 0.8.5",
+ "subtle",
  "tar",
  "tempfile",
  "thiserror 1.0.69",
@@ -4424,7 +4426,7 @@ dependencies = [
 
 [[package]]
 name = "timenc-tauri"
-version = "2.2.2"
+version = "3.0.0"
 dependencies = [
  "serde",
  "serde_json",

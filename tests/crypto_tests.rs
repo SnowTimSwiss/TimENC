@@ -7,8 +7,8 @@ fn test_key_derivation() {
     let password = b"test_password";
     let salt = [0u8; 16];
     
-    let key1 = crypto::derive_key_v3(password, &salt, None);
-    let key2 = crypto::derive_key_v3(password, &salt, None);
+    let key1 = crypto::derive_key_v3(password, &salt, None).expect("derivation should succeed");
+    let key2 = crypto::derive_key_v3(password, &salt, None).expect("derivation should succeed");
     
     // Same password + salt should produce same key
     assert_eq!(key1.as_ref(), key2.as_ref());
@@ -20,8 +20,8 @@ fn test_key_derivation_with_keyfile() {
     let salt = [0u8; 16];
     let keyfile = b"keyfile_content";
     
-    let key1 = crypto::derive_key_v3(password, &salt, None);
-    let key2 = crypto::derive_key_v3(password, &salt, Some(keyfile));
+    let key1 = crypto::derive_key_v3(password, &salt, None).expect("derivation should succeed");
+    let key2 = crypto::derive_key_v3(password, &salt, Some(keyfile)).expect("derivation should succeed");
     
     // Keyfile should produce different key
     assert_ne!(key1.as_ref(), key2.as_ref());
@@ -32,8 +32,10 @@ fn test_key_derivation_respects_parameters() {
     let password = b"test_password";
     let salt = [7u8; 16];
 
-    let key1 = crypto::derive_key(password, &salt, 2, 32 * 1024, 1, None);
-    let key2 = crypto::derive_key(password, &salt, 3, 32 * 1024, 1, None);
+    let key1 = crypto::derive_key(password, &salt, 2, 32 * 1024, 1, None)
+        .expect("derivation should succeed");
+    let key2 = crypto::derive_key(password, &salt, 3, 32 * 1024, 1, None)
+        .expect("derivation should succeed");
 
     assert_ne!(key1.as_ref(), key2.as_ref());
 }

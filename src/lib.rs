@@ -7,5 +7,6 @@ pub mod format;
 pub mod error;
 pub mod operations;
 
+pub use crypto::{KdfParams, KdfProfile};
 pub use error::{Error, Result};
 pub use operations::{encrypt, decrypt, generate_keyfile, EncryptOptions, DecryptOptions};

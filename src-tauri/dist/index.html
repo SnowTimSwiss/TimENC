@@ -362,6 +362,21 @@
             </label>
           </div>
 
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="enc-pad">
+              <span id="enc-pad-label">Hide the exact file size (adds up to 12%)</span>
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" id="enc-kdf-label">Key derivation strength</label>
+            <select class="input" id="enc-kdf-profile">
+              <option value="balanced" id="enc-kdf-balanced">Balanced - 256 MB, 3 passes</option>
+              <option value="paranoid" id="enc-kdf-paranoid">Paranoid - 1 GB, 4 passes (slower)</option>
+            </select>
+          </div>
+
           <div style="margin-top: 24px">
             <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;" id="enc-submit">Encrypt</button>
           </div>
@@ -475,6 +490,10 @@
           browseBtn: "Browse",
           createBtn: "Create",
           compressLabel: "Compress before encrypting",
+          padLabel: "Hide the exact file size (adds up to 12%)",
+          kdfLabel: "Key derivation strength",
+          kdfBalanced: "Balanced - 256 MB, 3 passes",
+          kdfParanoid: "Paranoid - 1 GB, 4 passes (slower)",
           submitBtn: "Encrypt"
         },
         decrypt: {
@@ -530,6 +549,10 @@
           browseBtn: "Durchsuchen",
           createBtn: "Erstellen",
           compressLabel: "Vor der Verschlüsselung komprimieren",
+          padLabel: "Genaue Dateigröße verbergen (bis zu 12% größer)",
+          kdfLabel: "Stärke der Schlüsselableitung",
+          kdfBalanced: "Ausgewogen - 256 MB, 3 Durchläufe",
+          kdfParanoid: "Paranoid - 1 GB, 4 Durchläufe (langsamer)",
           submitBtn: "Verschlüsseln"
         },
         decrypt: {
@@ -726,6 +749,10 @@
       document.getElementById("enc-browse-keyfile").textContent = t("encrypt", "browseBtn");
       document.getElementById("jump-tools").textContent = t("encrypt", "createBtn");
       document.getElementById("enc-compress-label").textContent = t("encrypt", "compressLabel");
+      document.getElementById("enc-pad-label").textContent = t("encrypt", "padLabel");
+      document.getElementById("enc-kdf-label").textContent = t("encrypt", "kdfLabel");
+      document.getElementById("enc-kdf-balanced").textContent = t("encrypt", "kdfBalanced");
+      document.getElementById("enc-kdf-paranoid").textContent = t("encrypt", "kdfParanoid");
       document.getElementById("enc-submit").textContent = t("encrypt", "submitBtn");
       
       document.getElementById("dec-title").textContent = t("decrypt", "title");
@@ -972,7 +999,9 @@
           output_path: getFieldValue("enc-output"),
           password: getFieldValue("enc-password"),
           keyfile_path: getOptionalFieldValue("enc-keyfile"),
-          compress: document.getElementById("enc-compress").checked
+          compress: document.getElementById("enc-compress").checked,
+          pad: document.getElementById("enc-pad").checked,
+          kdf_profile: document.getElementById("enc-kdf-profile").value
         }
       }));
     });
