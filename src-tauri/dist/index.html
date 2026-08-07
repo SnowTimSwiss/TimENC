@@ -133,11 +133,11 @@
     .page-title {
       font-size: 1.4rem;
       font-weight: 600;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .form-group {
-      margin-bottom: 14px;
+      margin-bottom: 12px;
     }
 
     .form-label {
@@ -221,7 +221,71 @@
 
     .options {
       display: grid;
-      gap: 8px;
+      gap: 6px;
+    }
+
+    .advanced-summary {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 0;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+    }
+
+    /* The rules either side of the label - no box, just a divider. */
+    .advanced-summary::before,
+    .advanced-summary::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .advanced-summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .advanced-summary:hover {
+      color: var(--text-primary);
+    }
+
+    .advanced-caret {
+      width: 0;
+      height: 0;
+      border-left: 5px solid currentColor;
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+      transition: transform 0.2s;
+    }
+
+    .advanced[open] .advanced-caret {
+      transform: rotate(90deg);
+    }
+
+    .advanced[open] .advanced-summary {
+      color: var(--text-primary);
+    }
+
+    /* So an enabled option is still visible while the section is collapsed. */
+    .advanced-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(88, 166, 255, 0.15);
+      color: var(--accent);
+    }
+
+    .advanced-badge[hidden] {
+      display: none;
+    }
+
+    .advanced .options {
+      padding-top: 10px;
     }
 
     .switch-row {
@@ -229,7 +293,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 14px;
-      padding: 9px 12px;
+      padding: 7px 12px;
       background: var(--bg-primary);
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -481,6 +545,12 @@
           </div>
 
           <div class="form-group full-width">
+           <details class="advanced" id="enc-advanced">
+            <summary class="advanced-summary">
+              <span class="advanced-caret"></span>
+              <span id="enc-advanced-label">Advanced options</span>
+              <span class="advanced-badge" id="enc-advanced-badge" hidden></span>
+            </summary>
             <div class="options">
               <label class="switch-row" id="enc-compress-row">
                 <span class="switch-text">
@@ -515,6 +585,7 @@
                 </span>
               </label>
             </div>
+           </details>
           </div>
 
           <div class="form-group full-width" style="margin: 6px 0 0">
@@ -630,6 +701,8 @@
           keyfilePlaceholder: "Select keyfile",
           browseBtn: "Browse",
           createBtn: "Create",
+          advancedLabel: "Advanced options",
+          advancedBadge: "{n} on",
           compressLabel: "Compress before encrypting",
           compressHint: "Smaller output for compressible files",
           padLabel: "Hide the exact file size",
@@ -690,6 +763,8 @@
           keyfilePlaceholder: "Keyfile auswählen",
           browseBtn: "Durchsuchen",
           createBtn: "Erstellen",
+          advancedLabel: "Erweiterte Optionen",
+          advancedBadge: "{n} aktiv",
           compressLabel: "Vor der Verschlüsselung komprimieren",
           compressHint: "Kleinere Ausgabe bei komprimierbaren Dateien",
           padLabel: "Genaue Dateigröße verbergen",
@@ -891,6 +966,7 @@
       document.getElementById("enc-keyfile").placeholder = t("encrypt", "keyfilePlaceholder");
       document.getElementById("enc-browse-keyfile").textContent = t("encrypt", "browseBtn");
       document.getElementById("jump-tools").textContent = t("encrypt", "createBtn");
+      document.getElementById("enc-advanced-label").textContent = t("encrypt", "advancedLabel");
       document.getElementById("enc-compress-label").textContent = t("encrypt", "compressLabel");
       document.getElementById("enc-compress-hint").textContent = t("encrypt", "compressHint");
       document.getElementById("enc-pad-label").textContent = t("encrypt", "padLabel");
@@ -922,6 +998,7 @@
       document.getElementById("lang-label").textContent = t("settings", "langLabel");
       document.getElementById("version-label").textContent = t("settings", "versionLabel");
       document.getElementById("version-desc").textContent = t("settings", "versionDesc");
+      if (typeof syncAdvancedBadge === "function") syncAdvancedBadge();
       
       if (resultEl.textContent === "No operation run yet." || resultEl.textContent === "Noch kein Vorgang.") {
         setResult(t("common", "noResult"));
@@ -1134,10 +1211,23 @@
       }
     });
     
-    // Give an enabled switch a visible row state, not just the knob position.
+    // Give an enabled switch a visible row state, not just the knob position,
+    // and surface the count on the collapsed "Advanced options" header so an
+    // active option cannot hide behind it.
+    function syncAdvancedBadge() {
+      const badge = document.getElementById("enc-advanced-badge");
+      if (!badge) return;
+      const active = document.querySelectorAll("#enc-advanced .switch-row.is-on").length;
+      badge.hidden = active === 0;
+      badge.textContent = t("encrypt", "advancedBadge").replace("{n}", active);
+    }
+
     document.querySelectorAll(".switch-row").forEach(row => {
       const box = row.querySelector('input[type="checkbox"]');
-      const sync = () => row.classList.toggle("is-on", box.checked);
+      const sync = () => {
+        row.classList.toggle("is-on", box.checked);
+        syncAdvancedBadge();
+      };
       box.addEventListener("change", sync);
       sync();
     });
