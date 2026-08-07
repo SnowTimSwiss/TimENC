@@ -1,6 +1,6 @@
 [package]
 name = "timenc"
-version = "2.2.2"
+version = "3.0.0"
 edition = "2021"
 authors = ["TimENC Contributors"]
 description = "Secure file encryption with ChaCha20-Poly1305 and Argon2id"
@@ -21,6 +21,12 @@ path = "src/main.rs"
 # Cryptography
 chacha20poly1305 = "0.10"
 argon2 = "0.5"
+# Keyed BLAKE2b is the PRF behind the v6 subkey schedule. Argon2id is already
+# built on BLAKE2b, so this is a direct dependency on code that was in the
+# trust base (and in the lockfile) either way - no new supply-chain surface.
+blake2 = "0.10"
+# Constant-time comparison for the v6 key-commitment tag.
+subtle = "2.6"
 rand = "0.8"
 zeroize = "1.7"
 

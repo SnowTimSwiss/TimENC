@@ -40,6 +40,18 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="3.0.0" date="2026-08-07">
+      <description>
+        <p>New v6 file format with stronger integrity guarantees.</p>
+        <ul>
+          <li>Truncating an encrypted file is now detected instead of silently producing a shortened result.</li>
+          <li>Files are bound to a single password, and a wrong password is rejected instantly.</li>
+          <li>Optional padding hides the exact size of the encrypted file.</li>
+          <li>Selectable key derivation strength: balanced or paranoid.</li>
+          <li>Files from all earlier versions can still be decrypted.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.2.2" date="2026-06-28">
       <description>
         <p>Fix decryption failing inside the Flatpak sandbox (cross-device link error).</p>

@@ -1,8 +1,26 @@
 //! Command line entry point.
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
-use timenc::{encrypt, decrypt, generate_keyfile, EncryptOptions, DecryptOptions};
+use timenc::{encrypt, decrypt, generate_keyfile, EncryptOptions, DecryptOptions, KdfProfile};
+
+/// Argon2id cost profile, as selectable on the command line.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum KdfProfileArg {
+    /// 256 MiB, 3 passes - about a second on typical desktop hardware.
+    Balanced,
+    /// 1 GiB, 4 passes - for long-term archives.
+    Paranoid,
+}
+
+impl From<KdfProfileArg> for KdfProfile {
+    fn from(arg: KdfProfileArg) -> Self {
+        match arg {
+            KdfProfileArg::Balanced => KdfProfile::Balanced,
+            KdfProfileArg::Paranoid => KdfProfile::Paranoid,
+        }
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "timenc")]
@@ -35,6 +53,15 @@ enum Commands {
         /// Compress the data with zstd before encrypting it
         #[arg(short = 'c', long)]
         compress: bool,
+
+        /// Argon2id cost profile
+        #[arg(long, value_enum, default_value_t = KdfProfileArg::Balanced)]
+        kdf_profile: KdfProfileArg,
+
+        /// Pad the payload so the file size does not reveal the exact
+        /// plaintext size (at most ~12% overhead)
+        #[arg(long)]
+        pad: bool,
     },
 
     /// Decrypt a .timenc file
@@ -72,12 +99,16 @@ fn main() {
             password,
             keyfile,
             compress,
+            kdf_profile,
+            pad,
         } => {
             let options = EncryptOptions {
                 password,
                 keyfile_path: keyfile,
                 output_path: output,
                 compress,
+                kdf_profile: kdf_profile.into(),
+                pad,
             };
             encrypt(&input, options)
                 .map(|_| ())

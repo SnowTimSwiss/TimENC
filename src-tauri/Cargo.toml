@@ -1,6 +1,6 @@
 [package]
 name = "timenc-tauri"
-version = "2.2.2"
+version = "3.0.0"
 description = "TimENC - Secure Encryption GUI"
 authors = ["TimENC Contributors"]
 license = "GPL-3.0"
