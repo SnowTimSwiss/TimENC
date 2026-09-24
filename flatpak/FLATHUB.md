@@ -82,15 +82,15 @@ https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo .
   reviewers insist, the fallback is `--filesystem=home` → document the rationale in
   the PR description.
 - **Network**: the app needs none at runtime, and the build is offline. Good.
-- **Runtime version**: `org.gnome.Platform//48` provides WebKitGTK 4.1 + libsoup3
+- **Runtime version**: `org.gnome.Platform//50` provides WebKitGTK 4.1 + libsoup3
   that Tauri needs. Bump the runtime version as GNOME releases; old runtimes get
   end-of-lifed.
 
 ## Local test on a Linux box (before submitting)
 
 ```sh
-flatpak install -y flathub org.gnome.Platform//48 org.gnome.Sdk//48 \
-  org.freedesktop.Sdk.Extension.rust-stable//24.08
+flatpak install -y flathub org.gnome.Platform//50 org.gnome.Sdk//50 \
+  org.freedesktop.Sdk.Extension.rust-stable//25.08
 flatpak-builder --user --force-clean --install build-dir \
   flatpak/io.github.SnowTimSwiss.TimENC.yml
 flatpak run io.github.SnowTimSwiss.TimENC

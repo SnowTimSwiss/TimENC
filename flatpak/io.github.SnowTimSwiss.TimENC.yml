@@ -1,6 +1,6 @@
 app-id: io.github.SnowTimSwiss.TimENC
 runtime: org.gnome.Platform
-runtime-version: '48'
+runtime-version: '50'
 sdk: org.gnome.Sdk
 # Rust toolchain is provided by an SDK extension rather than the build host,
 # so the build is fully reproducible inside the Flatpak sandbox.
