@@ -1,6 +1,6 @@
 [package]
 name = "timenc"
-version = "3.0.0"
+version = "3.1.0"
 edition = "2021"
 authors = ["TimENC Contributors"]
 description = "Secure file encryption with ChaCha20-Poly1305 and Argon2id"
@@ -35,19 +35,14 @@ zstd = "0.13"
 
 # CLI
 clap = { version = "4.4", features = ["derive"] }
+# Reads passwords from the terminal without echoing them.
+rpassword = "7"
 
 # Utilities
-thiserror = "1.0"
+thiserror = "2"
 tar = "0.4"
-tempfile = "3.9"
+tempfile = "3.10"
 dirs = "5.0"
-
-# Async support for potential future features
-tokio = { version = "1.35", features = ["full"], optional = true }
-
-[features]
-default = []
-gui = ["dep:tokio"]
 
 [profile.release]
 opt-level = 3
