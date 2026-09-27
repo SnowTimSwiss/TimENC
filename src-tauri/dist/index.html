@@ -556,8 +556,17 @@
             </div>
             <div class="strength-text" id="enc-strength">Enter a password</div>
           </div>
-          
+
           <div class="form-group">
+            <label class="form-label" id="enc-confirm-label">Repeat password</label>
+            <div class="input-row">
+              <input type="password" class="input" id="enc-confirm" required autocomplete="new-password">
+              <button type="button" class="btn" data-toggle="enc-confirm">Show</button>
+            </div>
+            <div class="strength-text" id="enc-confirm-status"></div>
+          </div>
+
+          <div class="form-group full-width">
             <label class="form-label" id="enc-keyfile-label">Keyfile (optional)</label>
             <div class="input-row">
               <input type="text" class="input" id="enc-keyfile" placeholder="Select keyfile">
@@ -603,6 +612,16 @@
                 </span>
                 <span class="switch">
                   <input type="checkbox" id="enc-paranoid">
+                  <span class="switch-track"></span>
+                </span>
+              </label>
+              <label class="switch-row" id="enc-delete-row">
+                <span class="switch-text">
+                  <span id="enc-delete-label">Delete the original afterwards</span>
+                  <span class="switch-hint" id="enc-delete-hint">Only once the encrypted file has been written and verified. Overwritten first, best-effort.</span>
+                </span>
+                <span class="switch">
+                  <input type="checkbox" id="enc-delete">
                   <span class="switch-track"></span>
                 </span>
               </label>
@@ -654,6 +673,21 @@
             <div class="input-row">
               <input type="text" class="input" id="dec-keyfile" placeholder="Select keyfile">
               <button type="button" class="btn" id="dec-browse-keyfile">Browse</button>
+            </div>
+          </div>
+
+          <div class="form-group full-width">
+            <div class="options">
+              <label class="switch-row" id="dec-delete-row">
+                <span class="switch-text">
+                  <span id="dec-delete-label">Delete the encrypted file afterwards</span>
+                  <span class="switch-hint" id="dec-delete-hint">Only once decryption has succeeded and the output is on disk.</span>
+                </span>
+                <span class="switch">
+                  <input type="checkbox" id="dec-delete">
+                  <span class="switch-track"></span>
+                </span>
+              </label>
             </div>
           </div>
 
@@ -743,6 +777,11 @@
           padHint: "Pads the output, up to 12% larger",
           paranoidLabel: "Paranoid mode",
           paranoidHint: "Key derivation with 1 GB instead of 256 MB - slower, for long-term archives",
+          deleteLabel: "Delete the original afterwards",
+          deleteHint: "Only once the encrypted file has been written and verified. Overwritten first, best-effort.",
+          confirmLabel: "Repeat password",
+          passwordsMatch: "Passwords match",
+          passwordsDiffer: "Passwords do not match",
           submitBtn: "Encrypt"
         },
         decrypt: {
@@ -753,6 +792,10 @@
           outputLabel: "Output folder",
           passwordLabel: "Password",
           keyfileLabel: "Keyfile (optional)",
+          keyfilePlaceholder: "Select keyfile",
+          browseBtn: "Browse",
+          deleteLabel: "Delete the encrypted file afterwards",
+          deleteHint: "Only once decryption has succeeded and the output is on disk.",
           submitBtn: "Decrypt"
         },
         tools: {
@@ -807,6 +850,11 @@
           padHint: "Füllt die Ausgabe auf, bis zu 12% größer",
           paranoidLabel: "Paranoid-Modus",
           paranoidHint: "Schlüsselableitung mit 1 GB statt 256 MB - langsamer, für Langzeitarchive",
+          deleteLabel: "Original danach löschen",
+          deleteHint: "Erst wenn die verschlüsselte Datei geschrieben und geprüft ist. Wird vorher überschrieben (best-effort).",
+          confirmLabel: "Passwort wiederholen",
+          passwordsMatch: "Passwörter stimmen überein",
+          passwordsDiffer: "Passwörter stimmen nicht überein",
           submitBtn: "Verschlüsseln"
         },
         decrypt: {
@@ -817,6 +865,10 @@
           outputLabel: "Zielordner",
           passwordLabel: "Passwort",
           keyfileLabel: "Keyfile (optional)",
+          keyfilePlaceholder: "Keyfile auswählen",
+          browseBtn: "Durchsuchen",
+          deleteLabel: "Verschlüsselte Datei danach löschen",
+          deleteHint: "Erst wenn die Entschlüsselung geklappt hat und die Ausgabe auf der Festplatte ist.",
           submitBtn: "Entschlüsseln"
         },
         tools: {
@@ -832,7 +884,7 @@
           title: "Einstellungen",
           langLabel: "Sprache",
           versionLabel: "Version",
-          versionDesc: "TimENC v3.0.0 - v6-Format, schluesselbindend + Argon2id"
+          versionDesc: "TimENC v3.0.0 - v6-Format, schlüsselbindend + Argon2id"
         },
         common: {
           ready: "Bereit",
@@ -854,8 +906,6 @@
     const statusEl = document.getElementById("status");
     const resultEl = document.getElementById("result");
     const languageSelect = document.getElementById("language-select");
-    const CURRENT_VERSION = "2.2.0";
-    
     function t(section, key) {
       return translations[currentLang][section]?.[key] || translations.en[section]?.[key] || "";
     }
@@ -947,7 +997,8 @@
       fill.style.background = color;
       
       let label = t("common", "enterPassword");
-      if (score > 0 && score < 35) label = t("common", "weak");
+      if (score === 0) label = t("common", "enterPassword");
+      else if (score < 35) label = t("common", "weak");
       else if (score < 60) label = t("common", "fair");
       else if (score < 80) label = t("common", "strong");
       else if (score >= 80) label = t("common", "veryStrong");
@@ -955,6 +1006,22 @@
       text.textContent = label;
     }
     
+    function passwordsMatch() {
+      return document.getElementById("enc-password").value === document.getElementById("enc-confirm").value;
+    }
+
+    function updateConfirm() {
+      const confirm = document.getElementById("enc-confirm");
+      const status = document.getElementById("enc-confirm-status");
+      if (!confirm.value) {
+        status.textContent = "";
+        return;
+      }
+      const match = passwordsMatch();
+      status.textContent = t("encrypt", match ? "passwordsMatch" : "passwordsDiffer");
+      status.style.color = match ? "#3fb950" : "#f85149";
+    }
+
     function suggestEnc() {
       const input = document.getElementById("enc-input").value.trim();
       if (!input) return "";
@@ -1011,6 +1078,9 @@
       document.getElementById("enc-pad-hint").textContent = t("encrypt", "padHint");
       document.getElementById("enc-paranoid-label").textContent = t("encrypt", "paranoidLabel");
       document.getElementById("enc-paranoid-hint").textContent = t("encrypt", "paranoidHint");
+      document.getElementById("enc-delete-label").textContent = t("encrypt", "deleteLabel");
+      document.getElementById("enc-delete-hint").textContent = t("encrypt", "deleteHint");
+      document.getElementById("enc-confirm-label").textContent = t("encrypt", "confirmLabel");
       document.getElementById("enc-submit").textContent = t("encrypt", "submitBtn");
       
       document.getElementById("dec-title").textContent = t("decrypt", "title");
@@ -1022,6 +1092,8 @@
       document.getElementById("dec-browse-output").textContent = t("encrypt", "folderBtn");
       document.getElementById("dec-password-label").textContent = t("decrypt", "passwordLabel");
       document.getElementById("dec-keyfile-label").textContent = t("decrypt", "keyfileLabel");
+      document.getElementById("dec-delete-label").textContent = t("decrypt", "deleteLabel");
+      document.getElementById("dec-delete-hint").textContent = t("decrypt", "deleteHint");
       document.getElementById("dec-keyfile").placeholder = t("decrypt", "keyfilePlaceholder");
       document.getElementById("dec-browse-keyfile").textContent = t("decrypt", "browseBtn");
       document.getElementById("dec-submit").textContent = t("decrypt", "submitBtn");
@@ -1054,8 +1126,9 @@
       });
       
       updateStrength();
+      updateConfirm();
     }
-    
+
     function setLanguage(lang) {
       currentLang = lang;
       localStorage.setItem("timenc.language", lang);
@@ -1151,7 +1224,11 @@
       document.getElementById("dec-output").dataset.userEdited = "1";
     });
     
-    document.getElementById("enc-password").addEventListener("input", updateStrength);
+    document.getElementById("enc-password").addEventListener("input", () => {
+      updateStrength();
+      updateConfirm();
+    });
+    document.getElementById("enc-confirm").addEventListener("input", updateConfirm);
     
     document.getElementById("enc-browse-input").addEventListener("click", async () => {
       try {
@@ -1275,6 +1352,13 @@
     document.getElementById("encrypt-form").addEventListener("submit", e => {
       e.preventDefault();
       const btn = e.currentTarget.querySelector(".btn-primary");
+      if (!passwordsMatch()) {
+        const msg = t("encrypt", "passwordsDiffer");
+        setStatus("error", msg);
+        setResult(msg);
+        document.getElementById("enc-confirm").focus();
+        return;
+      }
       runForm(btn, () => invoke("encrypt_file", {
         request: {
           input_path: getFieldValue("enc-input"),
@@ -1283,7 +1367,8 @@
           keyfile_path: getOptionalFieldValue("enc-keyfile"),
           compress: document.getElementById("enc-compress").checked,
           pad: document.getElementById("enc-pad").checked,
-          kdf_profile: document.getElementById("enc-paranoid").checked ? "paranoid" : "balanced"
+          kdf_profile: document.getElementById("enc-paranoid").checked ? "paranoid" : "balanced",
+          delete_source: document.getElementById("enc-delete").checked
         }
       }));
     });
@@ -1296,7 +1381,8 @@
           input_path: getFieldValue("dec-input"),
           output_dir: getFieldValue("dec-output"),
           password: getFieldValue("dec-password"),
-          keyfile_path: getOptionalFieldValue("dec-keyfile")
+          keyfile_path: getOptionalFieldValue("dec-keyfile"),
+          delete_source: document.getElementById("dec-delete").checked
         }
       }));
     });
