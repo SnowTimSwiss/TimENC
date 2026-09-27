@@ -38,6 +38,8 @@ pub struct EncryptRequest {
     kdf_profile: KdfProfileRequest,
     #[serde(default)]
     pad: bool,
+    #[serde(default)]
+    delete_source: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -46,6 +48,8 @@ pub struct DecryptRequest {
     output_dir: PathBuf,
     password: String,
     keyfile_path: Option<PathBuf>,
+    #[serde(default)]
+    delete_source: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -94,67 +98,77 @@ where
     })
 }
 
+impl OperationResult {
+    fn from_result(result: timenc::Result<PathBuf>, success_message: &str) -> Self {
+        match result {
+            Ok(path) => Self {
+                success: true,
+                message: success_message.to_string(),
+                path: Some(path),
+            },
+            Err(e) => Self {
+                success: false,
+                message: e.to_string(),
+                path: None,
+            },
+        }
+    }
+}
+
+/// Runs a CPU- and IO-heavy operation on the blocking thread pool, so that a
+/// long Argon2id run or a large file does not tie up an async worker.
+async fn run_blocking<F>(operation: F) -> Result<OperationResult, String>
+where
+    F: FnOnce() -> OperationResult + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(operation)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn encrypt_file(request: EncryptRequest) -> Result<OperationResult, String> {
-    let options = EncryptOptions {
-        password: request.password,
-        keyfile_path: request.keyfile_path,
-        output_path: request.output_path,
-        compress: request.compress,
-        kdf_profile: request.kdf_profile.into(),
-        pad: request.pad,
-    };
-
-    match encrypt(&request.input_path, options) {
-        Ok(path) => Ok(OperationResult {
-            success: true,
-            message: "File encrypted successfully".to_string(),
-            path: Some(path),
-        }),
-        Err(e) => Ok(OperationResult {
-            success: false,
-            message: e.to_string(),
-            path: None,
-        }),
-    }
+    run_blocking(move || {
+        let options = EncryptOptions {
+            password: request.password,
+            keyfile_path: request.keyfile_path,
+            output_path: request.output_path,
+            compress: request.compress,
+            kdf_profile: request.kdf_profile.into(),
+            pad: request.pad,
+            delete_source: request.delete_source,
+        };
+        OperationResult::from_result(
+            encrypt(&request.input_path, options),
+            "File encrypted successfully",
+        )
+    })
+    .await
 }
 
 #[tauri::command]
 async fn decrypt_file(request: DecryptRequest) -> Result<OperationResult, String> {
-    let options = DecryptOptions {
-        password: request.password,
-        keyfile_path: request.keyfile_path,
-        output_dir: request.output_dir,
-    };
-
-    match decrypt(&request.input_path, options) {
-        Ok(path) => Ok(OperationResult {
-            success: true,
-            message: "File decrypted successfully".to_string(),
-            path: Some(path),
-        }),
-        Err(e) => Ok(OperationResult {
-            success: false,
-            message: e.to_string(),
-            path: None,
-        }),
-    }
+    run_blocking(move || {
+        let options = DecryptOptions {
+            password: request.password,
+            keyfile_path: request.keyfile_path,
+            output_dir: request.output_dir,
+            delete_source: request.delete_source,
+        };
+        OperationResult::from_result(
+            decrypt(&request.input_path, options),
+            "File decrypted successfully",
+        )
+    })
+    .await
 }
 
 #[tauri::command]
 async fn create_keyfile(output_path: PathBuf) -> Result<OperationResult, String> {
-    match generate_keyfile(&output_path) {
-        Ok(path) => Ok(OperationResult {
-            success: true,
-            message: "Keyfile created successfully".to_string(),
-            path: Some(path),
-        }),
-        Err(e) => Ok(OperationResult {
-            success: false,
-            message: e.to_string(),
-            path: None,
-        }),
-    }
+    Ok(OperationResult::from_result(
+        generate_keyfile(&output_path),
+        "Keyfile created successfully",
+    ))
 }
 
 #[tauri::command]
@@ -190,8 +204,6 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             encrypt_file,
             decrypt_file,
