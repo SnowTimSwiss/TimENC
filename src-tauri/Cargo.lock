@@ -4320,7 +4320,7 @@ dependencies = [
 
 [[package]]
 name = "timenc"
-version = "3.0.0"
+version = "3.1.0"
 dependencies = [
  "argon2",
  "blake2",
@@ -4339,7 +4339,7 @@ dependencies = [
 
 [[package]]
 name = "timenc-tauri"
-version = "3.0.0"
+version = "3.1.0"
 dependencies = [
  "serde",
  "serde_json",

@@ -40,6 +40,18 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="3.1.0" date="2026-09-27">
+      <description>
+        <p>Safer file handling.</p>
+        <ul>
+          <li>Originals are no longer deleted automatically. Deleting is now an option, and only happens after the encrypted file has been verified.</li>
+          <li>The password has to be entered twice when encrypting.</li>
+          <li>Encrypted files are synced to disk before anything is deleted, and existing files are never overwritten.</li>
+          <li>Folders and compressed files are no longer written to a temporary folder unencrypted.</li>
+          <li>Symbolic links inside folders are stored as links instead of being followed.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.0" date="2026-08-07">
       <description>
         <p>New v6 file format with stronger integrity guarantees.</p>

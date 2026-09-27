@@ -22,7 +22,10 @@ It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation fo
 * **Selectable KDF strength** (`balanced` / `paranoid`)
 * **Protection against tar path traversal**
 * **Secure memory handling** (zeroize on drop)
-* **Best-effort overwrite before deleting source files**
+* **Your originals are safe by default** - the source is only deleted if you ask for it, and only after the encrypted file has been synced to disk and verified by decrypting it again
+* **No plaintext temp files** - folders and compressed payloads are streamed straight into the encryptor
+* **Never overwrites** an existing file, and never leaves a half-written `.timenc` behind
+* **Best-effort overwrite before deleting source files** (when deletion is enabled)
 * **Cross-platform desktop GUI (Tauri)**
 * **Cross-platform**: Windows, macOS, Linux
 
@@ -78,8 +81,11 @@ ML-KEM), never post-quantum alone.
 ## 🧠 How It Works
 
 1. You select a **file or directory**.
-2. TimENC creates a **temporary TAR archive** for directories, and compresses the
-   payload with zstd if you asked for it.
+2. Directories are packed as a **TAR stream** (symlinks are stored as links, never
+   followed), and the payload is compressed with zstd if you asked for it. This
+   happens in memory, streaming: no unencrypted copy is ever written to disk. The
+   source is read twice - once to measure the exact payload length the metadata
+   records, once to encrypt it.
 3. It derives a **master key** from your password and optional keyfile using
    Argon2id, then splits it into separate **metadata, data, and commitment
    subkeys** with keyed BLAKE2b.
@@ -93,6 +99,19 @@ ML-KEM), never post-quantum alone.
    without any ciphertext work), then metadata and every payload chunk are
    authenticated, and the
    stream is rejected unless it ends at the chunk marked final.
+
+### Safe file handling
+
+* The encrypted file is written to a temporary file next to its destination,
+  flushed with `fsync`, and only then renamed into place. A crash or power loss
+  never leaves a truncated `.timenc` file behind, and an existing file is never
+  overwritten.
+* The source is kept unless you enable **delete source** (`--delete-source` or the
+  switch in the GUI). When enabled, TimENC first decrypts the new file again and
+  compares it with what it read from the source; only if that matches is the
+  source overwritten with zeros and removed.
+* Decryption keeps the `.timenc` file by default as well, and syncs the output to
+  disk before deleting it when asked to.
 
 ### File Format
 
@@ -160,29 +179,41 @@ Download the latest release for your platform:
 
 TimENC supports both GUI and CLI modes. Use the CLI for scripting, automation, or headless environments.
 
+```bash
+# Prompts for the password (twice when encrypting)
+timenc encrypt secret.pdf -o secret.timenc
+timenc decrypt secret.timenc -o ./out
+
+# Non-interactive: read the password from the first line of a file
+timenc encrypt photos/ -o photos.timenc --password-file ~/.timenc-pass --compress --delete-source
 ```
 
 ### CLI Commands Overview
 
 | Command | Description |
 |---------|-------------|
-| `encrypt <input> -o <output> -p <password> [-k <keyfile>]` | Encrypt a file or folder |
-| `decrypt <input> -o <output> -p <password> [-k <keyfile>]` | Decrypt a .timenc file |
+| `encrypt <input> -o <output> [-k <keyfile>]` | Encrypt a file or folder |
+| `decrypt <input> -o <output> [-k <keyfile>]` | Decrypt a .timenc file |
 | `generate-keyfile <output>` | Generate a new random keyfile (32 bytes) |
+
+Without `--password-file` or `-p`, the password is read from the terminal without
+echoing it. `-p` still works for compatibility, but the password then shows up in
+the process list and your shell history.
 
 ### CLI Options
 
 | Option | Description |
 |--------|-------------|
 | `-o, --output` | Output path (file for encrypt, folder for decrypt) |
-| `-p, --password` | Password for encryption/decryption |
+| `--password-file` | Read the password from the first line of a file |
+| `-p, --password` | Password on the command line (insecure, see above) |
 | `-k, --keyfile` | Optional keyfile for additional entropy |
 | `--compress` | Compress with zstd before encrypting (encrypt only) |
 | `--pad` | Pad the payload to hide the exact plaintext size (encrypt only, <=12% overhead) |
 | `--kdf-profile` | Argon2id cost profile: `balanced` (default) or `paranoid` (encrypt only) |
-| `--delete-source` | Delete source file after operation |
+| `--delete-source` | Delete the source after success (off by default; encrypt verifies the output first) |
 | `-h, --help` | Show help message |
-| `-v, --version` | Show version information |
+| `-V, --version` | Show version information |
 
 ---
 
@@ -190,7 +221,7 @@ TimENC supports both GUI and CLI modes. Use the CLI for scripting, automation, o
 
 * **Modern dark theme** inspired by GitHub Dark
 * **Drag & drop** support for files
-* **Password strength indicator**
+* **Password strength indicator** and a **repeat-password field** so a typo cannot lock you out
 * **Keyfile generator** built-in
 * **Progress feedback** with detailed status messages
 * **Native file dialogs** for secure file selection
