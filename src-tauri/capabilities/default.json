@@ -1,25 +1,12 @@
 {
   "identifier": "main",
-  "description": "Main capability for TimENC",
-  "windows": ["main"],
+  "description": "Main capability for TimENC. The page only opens file dialogs; all file access happens in the Rust backend.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
-    "dialog:default",
     "dialog:allow-open",
-    "dialog:allow-save",
-    "dialog:allow-ask",
-    "dialog:allow-confirm",
-    "dialog:allow-message",
-    "fs:default",
-    "fs:allow-read-file",
-    "fs:allow-write-file",
-    "fs:allow-read-dir",
-    "fs:allow-copy-file",
-    "fs:allow-mkdir",
-    "fs:allow-remove",
-    "fs:allow-rename",
-    "fs:allow-exists",
-    "shell:default",
-    "shell:allow-open"
+    "dialog:allow-save"
   ]
 }
