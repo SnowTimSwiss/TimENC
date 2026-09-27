@@ -36,6 +36,7 @@ fn test_encrypt_decrypt_file_roundtrip() {
         compress: false,
         kdf_profile: Default::default(),
         pad: false,
+        delete_source: false,
     };
     
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -46,6 +47,7 @@ fn test_encrypt_decrypt_file_roundtrip() {
         password: password.to_string(),
         keyfile_path: None,
         output_dir: decrypt_temp.path().to_path_buf(),
+        delete_source: false,
     };
     
     let result_path = decrypt(&output_path, decrypt_options).expect("Decryption failed");
@@ -72,6 +74,7 @@ fn test_encrypt_uses_v6_format() {
         compress: false,
         kdf_profile: Default::default(),
         pad: false,
+        delete_source: false,
     };
 
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -112,6 +115,7 @@ fn test_encrypt_decrypt_with_keyfile() {
         compress: false,
         kdf_profile: Default::default(),
         pad: false,
+        delete_source: false,
     };
     
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -122,6 +126,7 @@ fn test_encrypt_decrypt_with_keyfile() {
         password: password.to_string(),
         keyfile_path: Some(keyfile_path),
         output_dir: decrypt_temp.path().to_path_buf(),
+        delete_source: false,
     };
     
     let result_path = decrypt(&output_path, decrypt_options).expect("Decryption failed");
@@ -152,6 +157,7 @@ fn test_decrypt_wrong_password() {
         compress: false,
         kdf_profile: Default::default(),
         pad: false,
+        delete_source: false,
     };
     
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -161,6 +167,7 @@ fn test_decrypt_wrong_password() {
         password: wrong_password.to_string(),
         keyfile_path: None,
         output_dir: decrypt_temp.path().to_path_buf(),
+        delete_source: false,
     };
     
     let result = decrypt(&output_path, decrypt_options);
@@ -193,6 +200,7 @@ fn test_encrypt_decrypt_directory() {
         compress: false,
         kdf_profile: Default::default(),
         pad: false,
+        delete_source: false,
     };
     
     encrypt(&input_dir, encrypt_options).expect("Encryption failed");
@@ -203,6 +211,7 @@ fn test_encrypt_decrypt_directory() {
         password: password.to_string(),
         keyfile_path: None,
         output_dir: decrypt_temp.path().to_path_buf(),
+        delete_source: false,
     };
     
     let result_path = decrypt(&output_path, decrypt_options).expect("Decryption failed");
@@ -270,6 +279,7 @@ fn test_decrypt_rejects_header_filename_traversal() {
             password: "password".to_string(),
             keyfile_path: None,
             output_dir: output_dir.clone(),
+            delete_source: false,
         },
     );
 
@@ -328,6 +338,7 @@ fn test_decrypt_rejects_tar_traversal_entries() {
             password: "password".to_string(),
             keyfile_path: None,
             output_dir: output_dir.clone(),
+            delete_source: false,
         },
     );
 
@@ -369,6 +380,7 @@ fn test_decrypt_uses_header_argon2_parameters() {
             password: "password".to_string(),
             keyfile_path: None,
             output_dir,
+            delete_source: false,
         },
     )
     .expect("decryption should succeed");
@@ -413,6 +425,7 @@ fn test_decrypt_python_v3_file() {
             password: "password".to_string(),
             keyfile_path: None,
             output_dir,
+            delete_source: false,
         },
     )
     .expect("decryption should succeed");
@@ -439,6 +452,7 @@ fn test_encrypt_decrypt_with_compression_roundtrip() {
         compress: true,
         kdf_profile: Default::default(),
         pad: false,
+        delete_source: false,
     };
 
     encrypt(&input_path, encrypt_options).expect("Encryption failed");
@@ -455,6 +469,7 @@ fn test_encrypt_decrypt_with_compression_roundtrip() {
         password: password.to_string(),
         keyfile_path: None,
         output_dir: decrypt_temp.path().to_path_buf(),
+        delete_source: false,
     };
 
     let result_path = decrypt(&output_path, decrypt_options).expect("Decryption failed");
@@ -501,6 +516,7 @@ fn test_decrypt_legacy_v4_byte_version_four() {
             password: "password".to_string(),
             keyfile_path: None,
             output_dir,
+            delete_source: false,
         },
     )
     .expect("decryption should succeed");
@@ -534,6 +550,7 @@ fn test_decrypt_rejects_unknown_future_version() {
             password: "password".to_string(),
             keyfile_path: None,
             output_dir,
+            delete_source: false,
         },
     );
 
@@ -563,6 +580,7 @@ fn test_decrypt_rejects_truncated_file_end_to_end() {
             compress: false,
             kdf_profile: Default::default(),
             pad: false,
+            delete_source: false,
         },
     )
     .expect("Encryption failed");
@@ -579,6 +597,7 @@ fn test_decrypt_rejects_truncated_file_end_to_end() {
             password: password.to_string(),
             keyfile_path: None,
             output_dir: decrypt_temp.path().to_path_buf(),
+            delete_source: false,
         },
     );
 
@@ -611,6 +630,7 @@ fn test_encrypt_decrypt_with_padding_roundtrip() {
             compress: false,
             kdf_profile: Default::default(),
             pad: true,
+            delete_source: false,
         },
     )
     .expect("Encryption failed");
@@ -632,6 +652,7 @@ fn test_encrypt_decrypt_with_padding_roundtrip() {
             password: password.to_string(),
             keyfile_path: None,
             output_dir: decrypt_temp.path().to_path_buf(),
+            delete_source: false,
         },
     )
     .expect("Decryption failed");
@@ -667,6 +688,7 @@ fn test_encrypt_decrypt_with_padding_and_compression_and_keyfile() {
             compress: true,
             kdf_profile: Default::default(),
             pad: true,
+            delete_source: false,
         },
     )
     .expect("Encryption failed");
@@ -685,6 +707,7 @@ fn test_encrypt_decrypt_with_padding_and_compression_and_keyfile() {
             password: password.to_string(),
             keyfile_path: None,
             output_dir: decrypt_temp.path().to_path_buf(),
+            delete_source: false,
         },
     )
     .is_err());
@@ -695,6 +718,7 @@ fn test_encrypt_decrypt_with_padding_and_compression_and_keyfile() {
             password: password.to_string(),
             keyfile_path: Some(keyfile_path),
             output_dir: decrypt_temp.path().to_path_buf(),
+            delete_source: false,
         },
     )
     .expect("Decryption failed");
@@ -727,6 +751,7 @@ fn test_encrypt_decrypt_directory_with_padding() {
             compress: true,
             kdf_profile: Default::default(),
             pad: true,
+            delete_source: true,
         },
     )
     .expect("Encryption failed");
@@ -738,6 +763,7 @@ fn test_encrypt_decrypt_directory_with_padding() {
             password: password.to_string(),
             keyfile_path: None,
             output_dir: decrypt_temp.path().to_path_buf(),
+            delete_source: false,
         },
     )
     .expect("Decryption failed");
@@ -772,6 +798,7 @@ fn test_decrypt_rejects_tampered_v6_payload() {
             compress: false,
             kdf_profile: Default::default(),
             pad: false,
+            delete_source: false,
         },
     )
     .expect("Encryption failed");
@@ -787,6 +814,7 @@ fn test_decrypt_rejects_tampered_v6_payload() {
             password: password.to_string(),
             keyfile_path: None,
             output_dir: decrypt_temp.path().to_path_buf(),
+            delete_source: false,
         },
     );
 
