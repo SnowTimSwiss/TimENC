@@ -43,6 +43,15 @@ pub enum Error {
     #[error("Payload length mismatch: header says {expected} bytes, stream has {actual}")]
     PayloadLengthMismatch { expected: u64, actual: u64 },
 
+    #[error("The source changed while it was being encrypted - nothing was written, please try again")]
+    SourceChanged,
+
+    #[error("The output file must not be inside the folder being encrypted")]
+    OutputInsideInput,
+
+    #[error("Verification of the encrypted file failed, the source was kept: {0}")]
+    VerificationFailed(String),
+
     #[error("File already exists: {path}")]
     FileExists { path: String },
 

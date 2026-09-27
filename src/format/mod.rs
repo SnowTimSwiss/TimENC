@@ -1141,47 +1141,6 @@ pub mod v6 {
         (len + mask) & !mask
     }
 
-    /// A reader that yields the inner stream, then zero bytes up to a target
-    /// length, so that the ciphertext hides the exact plaintext size.
-    struct PadReader<'a, R: Read> {
-        inner: &'a mut R,
-        inner_done: bool,
-        inner_len: u64,
-        pad_remaining: u64,
-    }
-
-    impl<'a, R: Read> PadReader<'a, R> {
-        fn new(inner: &'a mut R, pad_bytes: u64) -> Self {
-            Self {
-                inner,
-                inner_done: false,
-                inner_len: 0,
-                pad_remaining: pad_bytes,
-            }
-        }
-    }
-
-    impl<R: Read> Read for PadReader<'_, R> {
-        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            if !self.inner_done {
-                let read = self.inner.read(buf)?;
-                if read > 0 {
-                    self.inner_len += read as u64;
-                    return Ok(read);
-                }
-                self.inner_done = true;
-            }
-
-            let pad = (buf.len() as u64).min(self.pad_remaining) as usize;
-            if pad == 0 {
-                return Ok(0);
-            }
-            buf[..pad].fill(0);
-            self.pad_remaining -= pad as u64;
-            Ok(pad)
-        }
-    }
-
     fn metadata_aad(header_bytes: &[u8]) -> Vec<u8> {
         let mut aad = Vec::with_capacity(AAD_LABEL_METADATA.len() + header_bytes.len());
         aad.extend_from_slice(AAD_LABEL_METADATA);
@@ -1293,53 +1252,144 @@ pub mod v6 {
         keys: &FileKeys,
         pad: bool,
     ) -> Result<Header> {
-        let header = build_header(salt, kdf, metadata, keys)?;
-        let header_bytes = header.to_bytes()?;
-        output.write_all(&header_bytes)?;
+        let mut writer = EncryptWriter::new(output, salt, kdf, metadata, keys, pad)?;
+        io::copy(input, &mut writer)?;
+        let header = writer.header().clone();
+        writer.finish()?;
+        Ok(header)
+    }
 
-        let encrypted_metadata = encrypt_metadata(metadata, &header, keys)?;
-        output.write_all(&encrypted_metadata)?;
+    /// A [`Write`] adapter that encrypts everything written to it as a v6
+    /// file.
+    ///
+    /// This is the push-style counterpart of [`encrypt_streaming`]: producers
+    /// that can only write (a tar builder, a zstd encoder) can feed it
+    /// directly, so no plaintext intermediate ever has to touch the disk.
+    ///
+    /// The header and encrypted metadata are written by [`EncryptWriter::new`].
+    /// Payload bytes are buffered one chunk at a time; a full chunk is only
+    /// emitted once more data arrives, so that [`EncryptWriter::finish`] can
+    /// always mark a short (possibly empty) chunk as final - exactly the
+    /// layout the reader-based encryptor produces.
+    pub struct EncryptWriter<'a, W: Write> {
+        output: W,
+        keys: &'a FileKeys,
+        header: Header,
+        header_bytes: Vec<u8>,
+        buffer: Zeroizing<Vec<u8>>,
+        index: u64,
+        written: u64,
+        expected_len: u64,
+        pad: bool,
+    }
 
-        let pad_bytes = if pad {
-            padme(metadata.payload_len) - metadata.payload_len
-        } else {
-            0
-        };
-        let mut padded = PadReader::new(input, pad_bytes);
+    impl<'a, W: Write> EncryptWriter<'a, W> {
+        /// Writes the header and encrypted metadata, then returns a writer for
+        /// exactly `metadata.payload_len` payload bytes.
+        pub fn new(
+            mut output: W,
+            salt: [u8; SALT_SIZE],
+            kdf: KdfParams,
+            metadata: &Metadata,
+            keys: &'a FileKeys,
+            pad: bool,
+        ) -> Result<Self> {
+            let header = build_header(salt, kdf, metadata, keys)?;
+            let header_bytes = header.to_bytes()?;
+            output.write_all(&header_bytes)?;
+            output.write_all(&encrypt_metadata(metadata, &header, keys)?)?;
 
-        let mut buffer = [0u8; CHUNK_SIZE];
-        let mut index: u64 = 0;
+            Ok(Self {
+                output,
+                keys,
+                header,
+                header_bytes,
+                buffer: Zeroizing::new(Vec::with_capacity(CHUNK_SIZE)),
+                index: 0,
+                written: 0,
+                expected_len: metadata.payload_len,
+                pad,
+            })
+        }
 
-        loop {
-            let bytes_read = read_chunk(&mut padded, &mut buffer)?;
-            // A short read means the padded stream is exhausted. A file whose
-            // length is an exact multiple of CHUNK_SIZE therefore ends with an
-            // empty final chunk, which is tag-only on disk.
-            let is_final = bytes_read < CHUNK_SIZE;
+        /// The header written at the start of the file.
+        pub fn header(&self) -> &Header {
+            &self.header
+        }
 
+        fn emit_chunk(&mut self, is_final: bool) -> Result<()> {
             let ciphertext = crypto::encrypt_chunk(
-                &keys.data_key,
-                &chunk_nonce(index),
-                &buffer[..bytes_read],
-                &data_aad(&header_bytes, index, is_final),
+                &self.keys.data_key,
+                &chunk_nonce(self.index),
+                &self.buffer,
+                &data_aad(&self.header_bytes, self.index, is_final),
             )
             .map_err(Error::from)?;
-            output.write_all(&ciphertext)?;
+            self.output.write_all(&ciphertext)?;
+            self.buffer.clear();
+            self.index += 1;
+            Ok(())
+        }
 
-            index += 1;
-            if is_final {
-                break;
+        fn push(&mut self, mut data: &[u8]) -> Result<()> {
+            while !data.is_empty() {
+                if self.buffer.len() == CHUNK_SIZE {
+                    self.emit_chunk(false)?;
+                }
+                let take = (CHUNK_SIZE - self.buffer.len()).min(data.len());
+                self.buffer.extend_from_slice(&data[..take]);
+                data = &data[take..];
             }
+            Ok(())
         }
 
-        if padded.inner_len != metadata.payload_len {
-            return Err(Error::PayloadLengthMismatch {
-                expected: metadata.payload_len,
-                actual: padded.inner_len,
-            });
+        /// Appends any padding, writes the final chunk, and returns the
+        /// underlying writer.
+        ///
+        /// Fails with [`Error::PayloadLengthMismatch`] if the number of bytes
+        /// written differs from the length recorded in the metadata.
+        pub fn finish(mut self) -> Result<W> {
+            if self.written != self.expected_len {
+                return Err(Error::PayloadLengthMismatch {
+                    expected: self.expected_len,
+                    actual: self.written,
+                });
+            }
+
+            if self.pad {
+                let zeros = [0u8; CHUNK_SIZE];
+                let mut remaining = padme(self.expected_len) - self.expected_len;
+                while remaining > 0 {
+                    let step = remaining.min(CHUNK_SIZE as u64) as usize;
+                    self.push(&zeros[..step])?;
+                    remaining -= step as u64;
+                }
+            }
+
+            // A file whose (padded) length is an exact multiple of CHUNK_SIZE
+            // ends with an empty final chunk, which is tag-only on disk.
+            if self.buffer.len() == CHUNK_SIZE {
+                self.emit_chunk(false)?;
+            }
+            self.emit_chunk(true)?;
+
+            self.output.flush()?;
+            Ok(self.output)
+        }
+    }
+
+    impl<W: Write> Write for EncryptWriter<'_, W> {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.push(buf).map_err(io::Error::other)?;
+            self.written += buf.len() as u64;
+            Ok(buf.len())
         }
 
-        Ok(header)
+        fn flush(&mut self) -> io::Result<()> {
+            // Buffered plaintext cannot be emitted early: whether a chunk is
+            // final is only known at `finish`.
+            self.output.flush()
+        }
     }
 
     /// Decrypts the payload into `output`, writing exactly
