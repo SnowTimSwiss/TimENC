@@ -12,6 +12,56 @@ use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 use zeroize::Zeroize;
 
+/// Largest keyfile that will be read.
+///
+/// A keyfile is hashed in full by Argon2id, so an unbounded read would let a
+/// wrong path (a device node, a multi-gigabyte video) exhaust memory.
+pub const MAX_KEYFILE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Reads a keyfile, refusing empty and oversized ones.
+///
+/// An empty keyfile is rejected rather than accepted as "no extra entropy": the
+/// user asked for a second factor and would silently get none.
+fn read_keyfile(path: &Path) -> Result<zeroize::Zeroizing<Vec<u8>>> {
+    let file = File::open(path)?;
+    let mut bytes = zeroize::Zeroizing::new(Vec::new());
+    file.take(MAX_KEYFILE_BYTES + 1).read_to_end(&mut bytes)?;
+
+    if bytes.is_empty() {
+        return Err(Error::InvalidKeyfile(format!(
+            "{} is empty, so it would add no security",
+            path.display()
+        )));
+    }
+    if bytes.len() as u64 > MAX_KEYFILE_BYTES {
+        return Err(Error::InvalidKeyfile(format!(
+            "{} is larger than {} MiB",
+            path.display(),
+            MAX_KEYFILE_BYTES / (1024 * 1024)
+        )));
+    }
+    Ok(bytes)
+}
+
+/// Reads the format version byte of a `.timenc` file.
+pub fn file_format_version(path: &Path) -> Result<u8> {
+    let mut prefix = [0u8; 7];
+    File::open(path)?
+        .read_exact(&mut prefix)
+        .map_err(|_| Error::InvalidFormat)?;
+    if &prefix[0..6] != crypto::MAGIC {
+        return Err(Error::InvalidFormat);
+    }
+    Ok(prefix[6])
+}
+
+/// True for formats that are still readable but lack the guarantees of v6
+/// (terminated stream, key commitment). Truncation of such a file at a chunk
+/// boundary goes undetected, so frontends should suggest re-encrypting it.
+pub fn is_legacy_version(version: u8) -> bool {
+    matches!(version, 3 | 4 | 5)
+}
+
 /// Inputs needed for an encryption run.
 #[derive(Clone)]
 pub struct EncryptOptions {
@@ -238,10 +288,9 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
     )?
     .count;
 
-    let keyfile_bytes = if let Some(ref keyfile_path) = options.keyfile_path {
-        Some(zeroize::Zeroizing::new(fs::read(keyfile_path)?))
-    } else {
-        None
+    let keyfile_bytes = match options.keyfile_path {
+        Some(ref keyfile_path) => Some(read_keyfile(keyfile_path)?),
+        None => None,
     };
 
     let salt = crypto::generate_salt();
@@ -406,10 +455,9 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
     let version = version_bytes[6];
     file.seek(std::io::SeekFrom::Start(0))?;
 
-    let keyfile_bytes = if let Some(ref keyfile_path) = options.keyfile_path {
-        Some(zeroize::Zeroizing::new(fs::read(keyfile_path)?))
-    } else {
-        None
+    let keyfile_bytes = match options.keyfile_path {
+        Some(ref keyfile_path) => Some(read_keyfile(keyfile_path)?),
+        None => None,
     };
     let keyfile_bytes = keyfile_bytes.as_ref().map(|bytes| bytes.as_slice());
 
@@ -549,17 +597,32 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
 }
 
 /// Writes a new keyfile with random bytes.
+///
+/// The file is created exclusively (an existing file, or a symlink planted at
+/// the destination, is an error rather than something to write through) and,
+/// on Unix, readable by the owner only: a keyfile is a secret, and the default
+/// umask would make it readable by every local user.
 pub fn generate_keyfile(output_path: &Path) -> Result<PathBuf> {
-    if output_path.exists() {
-        return Err(Error::FileExists {
-            path: output_path.to_string_lossy().to_string(),
-        });
+    let keyfile_data = zeroize::Zeroizing::new(crypto::generate_keyfile_data());
+
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
     }
 
-    let keyfile_data = crypto::generate_keyfile_data();
-    
-    let mut file = fs::File::create(output_path)?;
-    file.write_all(&keyfile_data)?;
+    let mut file = options.open(output_path).map_err(|e| {
+        if e.kind() == io::ErrorKind::AlreadyExists {
+            Error::FileExists {
+                path: output_path.to_string_lossy().to_string(),
+            }
+        } else {
+            Error::from(e)
+        }
+    })?;
+    file.write_all(&keyfile_data[..])?;
     file.sync_all()?;
 
     Ok(output_path.to_path_buf())
@@ -650,6 +713,20 @@ fn has_unsafe_path_components(path: &Path) -> bool {
     !has_normal
 }
 
+/// Accepts only the entry types TimENC itself writes: regular files,
+/// directories and symlinks.
+///
+/// Anything else a hostile archive could carry - hard links (which alias files
+/// outside the output directory), FIFOs, character and block devices - is
+/// refused rather than recreated on the victim's machine.
+fn ensure_supported_entry_type(kind: tar::EntryType) -> Result<()> {
+
+    if kind.is_file() || kind.is_dir() || kind.is_symlink() || kind.is_pax_global_extensions() {
+        return Ok(());
+    }
+    Err(Error::UnsafeArchiveEntry(format!("{kind:?}")))
+}
+
 /// Moves decrypted data from the temporary file into the output directory,
 /// unpacking the tar archive for directories and rejecting unsafe paths.
 fn handle_decrypted_output(
@@ -668,6 +745,7 @@ fn handle_decrypted_output(
         let mut extracted_files = Vec::new();
         for entry in tar_archive.entries()? {
             let mut entry = entry?;
+            ensure_supported_entry_type(entry.header().entry_type())?;
             let entry_path = entry.path()?.into_owned();
             if has_unsafe_path_components(&entry_path) {
                 return Err(Error::PathTraversal);
