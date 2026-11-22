@@ -63,7 +63,17 @@
     ],
     "linux": {
       "deb": {
-        "depends": []
+        "depends": [],
+        "desktopTemplate": "packaging/timenc.desktop",
+        "files": {
+          "/usr/share/mime/packages/timenc.xml": "packaging/timenc-mime.xml"
+        }
+      },
+      "rpm": {
+        "desktopTemplate": "packaging/timenc.desktop",
+        "files": {
+          "/usr/share/mime/packages/timenc.xml": "packaging/timenc-mime.xml"
+        }
       }
     },
     "macOS": {

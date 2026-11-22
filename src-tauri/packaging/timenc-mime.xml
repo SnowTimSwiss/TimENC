@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Teaches the desktop that *.timenc files are TimENC containers, so that
+     double-click and "Open With" offer TimENC. Matches on the file name and on
+     the "TIMENC" magic bytes every file starts with. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-timenc">
+    <comment>TimENC encrypted file</comment>
+    <comment xml:lang="de">TimENC-verschlüsselte Datei</comment>
+    <magic priority="60">
+      <match type="string" value="TIMENC" offset="0"/>
+    </magic>
+    <glob pattern="*.timenc"/>
+  </mime-type>
+</mime-info>

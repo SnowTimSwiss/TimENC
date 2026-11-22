@@ -42,6 +42,9 @@ modules:
       # Desktop entry + AppStream metadata (named after the app-id, as Flatpak requires)
       - install -Dm644 flatpak/io.github.SnowTimSwiss.TimENC.desktop /app/share/applications/io.github.SnowTimSwiss.TimENC.desktop
       - install -Dm644 flatpak/io.github.SnowTimSwiss.TimENC.metainfo.xml /app/share/metainfo/io.github.SnowTimSwiss.TimENC.metainfo.xml
+      # MIME type for *.timenc (named after the app-id so Flatpak exports it),
+      # without which the desktop never associates the files with TimENC
+      - install -Dm644 src-tauri/packaging/timenc-mime.xml /app/share/mime/packages/io.github.SnowTimSwiss.TimENC.xml
       # Icons into the hicolor theme, renamed to the app-id
       - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/io.github.SnowTimSwiss.TimENC.png
       - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/io.github.SnowTimSwiss.TimENC.png
