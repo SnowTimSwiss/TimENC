@@ -6,6 +6,8 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State};
+
+mod theme;
 use timenc::{encrypt, decrypt, generate_keyfile, EncryptOptions, DecryptOptions, KdfProfile};
 
 /// Argon2id cost profile as sent by the frontend.
@@ -258,6 +260,11 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .setup(|_app| {
+            // GTK is initialised and we are on its main thread here.
+            theme::follow_system_color_scheme();
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             encrypt_file,
             decrypt_file,

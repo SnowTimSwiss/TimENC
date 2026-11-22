@@ -4342,6 +4342,7 @@ dependencies = [
 name = "timenc-tauri"
 version = "3.2.0"
 dependencies = [
+ "gtk",
  "serde",
  "serde_json",
  "tauri",
