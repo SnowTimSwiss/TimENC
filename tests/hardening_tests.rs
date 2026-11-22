@@ -355,3 +355,21 @@ fn memory_inspection_can_be_disabled() {
     let dumpable = unsafe { libc::prctl(libc::PR_GET_DUMPABLE) };
     assert_eq!(dumpable, 0);
 }
+
+// ---------------------------------------------------------------------------
+// Output file names
+// ---------------------------------------------------------------------------
+
+#[test]
+fn output_names_must_be_exactly_one_plain_component() {
+    use timenc::format::sanitize_output_name;
+
+    for good in ["report.pdf", "a b", ".hidden", "...", "ünï.txt"] {
+        assert_eq!(sanitize_output_name(good).unwrap(), good);
+    }
+    // `Path` normalises several of these to a single component, so the check
+    // has to compare against the whole string.
+    for bad in ["", ".", "..", "a/", "a/.", "a//", "/a", "a/b", "../a", "a/..", "a\0b"] {
+        assert!(sanitize_output_name(bad).is_err(), "{bad:?} was accepted");
+    }
+}
