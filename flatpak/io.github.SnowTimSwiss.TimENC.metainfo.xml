@@ -49,6 +49,7 @@
           <li>Hostile archives can no longer plant hard links, devices or pipes when extracted.</li>
           <li>Passwords are no longer trimmed of leading or trailing spaces, and are cleared from the window after use.</li>
           <li>The window title bar now follows the system light/dark setting on GNOME and other Linux desktops.</li>
+          <li>Double-clicking or choosing "Open With" on a .timenc file now opens it in TimENC (DEB, RPM and Flatpak).</li>
           <li>Updated dependencies with known security advisories.</li>
         </ul>
       </description>
