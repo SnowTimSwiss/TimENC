@@ -162,26 +162,107 @@ impl Write for CountingWriter {
     }
 }
 
-/// Hashes everything written through it, so the payload can be compared with
-/// what a later decryption produces.
+/// Size of the blocks handed to the hashing thread.
+const HASH_BLOCK: usize = 1024 * 1024;
+
+/// Hashes data on a separate thread, so that hashing (about 1 GB/s for
+/// BLAKE2b, slower than the encryption it accompanies) overlaps with the work
+/// of the thread that produces the data instead of adding to it.
+///
+/// A small pool of blocks circulates between the two threads, which bounds the
+/// memory used and makes the producer wait if the hasher falls behind.
+struct BackgroundHasher {
+    full: std::sync::mpsc::SyncSender<Vec<u8>>,
+    empty: std::sync::mpsc::Receiver<Vec<u8>>,
+    worker: std::thread::JoinHandle<Blake2b512>,
+    block: Vec<u8>,
+}
+
+impl BackgroundHasher {
+    fn new() -> Self {
+        use std::sync::mpsc::sync_channel;
+
+        const BLOCKS_IN_FLIGHT: usize = 3;
+        let (full_tx, full_rx) = sync_channel::<Vec<u8>>(BLOCKS_IN_FLIGHT);
+        let (empty_tx, empty_rx) = sync_channel::<Vec<u8>>(BLOCKS_IN_FLIGHT + 1);
+        for _ in 0..BLOCKS_IN_FLIGHT {
+            let _ = empty_tx.send(Vec::with_capacity(HASH_BLOCK));
+        }
+
+        let worker = std::thread::spawn(move || {
+            let mut hasher = Blake2b512::new();
+            while let Ok(mut block) = full_rx.recv() {
+                hasher.update(&block);
+                block.clear();
+                let _ = empty_tx.send(block);
+            }
+            hasher
+        });
+
+        Self {
+            full: full_tx,
+            empty: empty_rx,
+            worker,
+            block: Vec::with_capacity(HASH_BLOCK),
+        }
+    }
+
+    fn update(&mut self, mut data: &[u8]) {
+        while !data.is_empty() {
+            let room = HASH_BLOCK - self.block.len();
+            let take = room.min(data.len());
+            self.block.extend_from_slice(&data[..take]);
+            data = &data[take..];
+
+            if self.block.len() == HASH_BLOCK {
+                let next = self.empty.recv().unwrap_or_default();
+                let full = std::mem::replace(&mut self.block, next);
+                // The worker only stops once the sender is dropped.
+                let _ = self.full.send(full);
+            }
+        }
+    }
+
+    fn finish(mut self) -> Vec<u8> {
+        let _ = self.full.send(std::mem::take(&mut self.block));
+        drop(self.full);
+        match self.worker.join() {
+            Ok(hasher) => hasher.finalize().to_vec(),
+            Err(_) => Vec::new(),
+        }
+    }
+}
+
+/// Passes everything through to `inner`, hashing it on the side when asked to
+/// so the payload can be compared with what a later decryption produces.
+///
+/// Hashing is only worth its cost when the result is used (verifying before the
+/// source is deleted), so it is off unless requested.
 struct HashingWriter<W: Write> {
     inner: W,
-    hasher: Blake2b512,
+    hasher: Option<BackgroundHasher>,
 }
 
 impl<W: Write> HashingWriter<W> {
-    fn new(inner: W) -> Self {
+    fn new(inner: W, enabled: bool) -> Self {
         Self {
             inner,
-            hasher: Blake2b512::new(),
+            hasher: enabled.then(BackgroundHasher::new),
         }
+    }
+
+    /// Returns the inner writer and, if hashing was on, the digest.
+    fn into_parts(self) -> (W, Option<Vec<u8>>) {
+        (self.inner, self.hasher.map(BackgroundHasher::finish))
     }
 }
 
 impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let written = self.inner.write(buf)?;
-        self.hasher.update(&buf[..written]);
+        if let Some(hasher) = &mut self.hasher {
+            hasher.update(&buf[..written]);
+        }
         Ok(written)
     }
 
@@ -206,6 +287,13 @@ fn write_payload<W: Write>(
 ) -> Result<W> {
     if compress {
         let mut encoder = zstd::stream::write::Encoder::new(out, 0)?;
+        // Compression is the slowest stage by far, and it runs twice (once to
+        // measure, once for real). With one or more workers zstd produces the
+        // same bytes whatever the worker count, run to run and however the
+        // input is split into writes, so the two passes always agree on the
+        // length. (Without workers the output differs slightly, which is why
+        // this is not conditional on the number of cores.)
+        encoder.multithread(crypto::worker_threads() as u32)?;
         write_raw_payload(input_path, archive_name, is_dir, &mut encoder)?;
         Ok(encoder.finish()?)
     } else {
@@ -230,10 +318,24 @@ fn write_raw_payload<W: Write>(
         tar_builder.finish()?;
     } else {
         let mut file = File::open(input_path)?;
-        io::copy(&mut file, out)?;
+        // A large buffer keeps the number of read calls (and, for the
+        // encryptor behind `out`, hand-offs) low: io::copy would use 8 KiB.
+        let mut buffer = vec![0u8; IO_BUFFER];
+        loop {
+            let read = match file.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => read,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e.into()),
+            };
+            out.write_all(&buffer[..read])?;
+        }
     }
     Ok(())
 }
+
+/// Buffer size for streaming a file into the encryptor and out to disk.
+const IO_BUFFER: usize = 1024 * 1024;
 
 /// Directory an output file will be created in.
 fn parent_dir(path: &Path) -> &Path {
@@ -279,14 +381,25 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
 
     // v6 records the exact payload length in the encrypted metadata, which is
     // written before the payload, so it is measured in a first pass.
-    let payload_len = write_payload(
-        input_path,
-        &original_name,
-        is_dir,
-        options.compress,
-        CountingWriter::default(),
-    )?
-    .count;
+    //
+    // A plain file needs no such pass: its length is its payload length. If it
+    // changes while being encrypted the writer notices and reports
+    // `SourceChanged`, exactly as it does for the measured case. Anything that
+    // is not a regular file (a device, a pipe) still takes the measuring pass,
+    // since its reported size means nothing.
+    let regular_file = !is_dir && !options.compress && fs::metadata(input_path)?.is_file();
+    let payload_len = if regular_file {
+        fs::metadata(input_path)?.len()
+    } else {
+        write_payload(
+            input_path,
+            &original_name,
+            is_dir,
+            options.compress,
+            CountingWriter::default(),
+        )?
+        .count
+    };
 
     let keyfile_bytes = match options.keyfile_path {
         Some(ref keyfile_path) => Some(read_keyfile(keyfile_path)?),
@@ -314,7 +427,7 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
 
     let temp_file = NamedTempFile::new_in(output_dir)?;
     let encryptor = format::v6::EncryptWriter::new(
-        BufWriter::new(temp_file.as_file().try_clone()?),
+        BufWriter::with_capacity(IO_BUFFER, temp_file.as_file().try_clone()?),
         salt,
         kdf,
         &metadata,
@@ -328,11 +441,10 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
         &original_name,
         is_dir,
         options.compress,
-        HashingWriter::new(encryptor),
+        HashingWriter::new(encryptor, options.delete_source),
     )?;
-    let payload_hash = hashing.hasher.finalize();
-    hashing
-        .inner
+    let (encryptor, payload_hash) = hashing.into_parts();
+    encryptor
         .finish()
         .map_err(|e| match e {
             // The first pass measured a different length: a file in the source
@@ -346,6 +458,7 @@ pub fn encrypt(input_path: &Path, options: EncryptOptions) -> Result<PathBuf> {
     temp_file.as_file().sync_all()?;
 
     if options.delete_source {
+        let payload_hash = payload_hash.unwrap_or_default();
         verify_encrypted_file(temp_file.path(), &header, &metadata, &keys, &payload_hash)
             .map_err(|e| Error::VerificationFailed(e.to_string()))?;
     }
@@ -377,7 +490,7 @@ fn verify_encrypted_file(
     keys: &format::v6::FileKeys,
     expected_payload_hash: &[u8],
 ) -> Result<()> {
-    let mut file = BufReader::new(File::open(path)?);
+    let mut file = BufReader::with_capacity(IO_BUFFER, File::open(path)?);
 
     let (header, _) = format::v6::Header::read_from(&mut file)?;
     if header.to_bytes()? != expected_header.to_bytes()? {
@@ -392,9 +505,10 @@ fn verify_encrypted_file(
         return Err(Error::InvalidFormat);
     }
 
-    let mut hashing = HashingWriter::new(io::sink());
+    let mut hashing = HashingWriter::new(io::sink(), true);
     format::v6::decrypt_streaming(&mut file, &mut hashing, &header, &metadata, keys)?;
-    if hashing.hasher.finalize().as_slice() != expected_payload_hash {
+    let (_, digest) = hashing.into_parts();
+    if digest.as_deref() != Some(expected_payload_hash) {
         return Err(Error::DecryptionFailed);
     }
 
@@ -489,6 +603,7 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
                 header.is_dir,
                 &temp_path,
                 &options.output_dir,
+                options.delete_source,
             )
         }
         4 | 5 => {
@@ -533,6 +648,7 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
                 metadata.is_dir,
                 &temp_path,
                 &options.output_dir,
+                options.delete_source,
             )
         }
         6 => {
@@ -583,6 +699,7 @@ pub fn decrypt(input_path: &Path, options: DecryptOptions) -> Result<PathBuf> {
                 metadata.is_dir,
                 &temp_path,
                 &options.output_dir,
+                options.delete_source,
             )
         }
         _ => Err(Error::UnsupportedVersion { version }),
@@ -728,11 +845,17 @@ fn ensure_supported_entry_type(kind: tar::EntryType) -> Result<()> {
 
 /// Moves decrypted data from the temporary file into the output directory,
 /// unpacking the tar archive for directories and rejecting unsafe paths.
+///
+/// `sync_extracted` makes every extracted file durable before returning. That
+/// is one `fsync` per file, which dominates the time for a folder of many small
+/// files, so it is only requested when the encrypted source is about to be
+/// deleted and the extracted copy becomes the only one.
 fn handle_decrypted_output(
     original_name: String,
     is_dir: bool,
     temp_path: &Path,
     output_dir: &Path,
+    sync_extracted: bool,
 ) -> Result<PathBuf> {
     fs::create_dir_all(output_dir)?;
 
@@ -760,8 +883,10 @@ fn handle_decrypted_output(
         // Make sure the extracted files are on disk before the caller may
         // delete the encrypted source. Best-effort: Windows only flushes
         // handles opened for writing, which a read-only file cannot give.
-        for extracted in &extracted_files {
-            let _ = File::open(extracted).and_then(|file| file.sync_all());
+        if sync_extracted {
+            for extracted in &extracted_files {
+                let _ = File::open(extracted).and_then(|file| file.sync_all());
+            }
         }
 
         Ok(output_dir.to_path_buf())

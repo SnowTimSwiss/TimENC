@@ -1403,7 +1403,11 @@ pub mod v6 {
                 .collect();
 
             if finish {
-                if take % CHUNK_SIZE == 0 {
+                // `%` rather than `is_multiple_of`, which older toolchains (the
+                // Flatpak SDK's) do not have yet.
+                #[allow(unknown_lints, clippy::manual_is_multiple_of)]
+                let whole_chunks = take % CHUNK_SIZE == 0;
+                if whole_chunks {
                     jobs.push(ChunkJob {
                         index: *index + jobs.len() as u64,
                         is_final: true,
@@ -1547,20 +1551,22 @@ pub mod v6 {
         let mut written: u64 = 0;
 
         loop {
-            let mut lengths = Vec::with_capacity(BATCH_CHUNKS);
-            let mut end = BatchEnd::Full;
-            for slot in batch.chunks_mut(ENC_CHUNK_SIZE) {
-                let bytes_read = read_chunk(input, slot)?;
-                if bytes_read < TAG_SIZE {
-                    end = BatchEnd::Truncated;
-                    break;
-                }
-                lengths.push(bytes_read);
-                if bytes_read < ENC_CHUNK_SIZE {
-                    end = BatchEnd::Final;
-                    break;
-                }
-            }
+            // One read for the whole batch: the slots are contiguous, so chunk
+            // boundaries follow from how much arrived.
+            let filled = read_chunk(input, &mut batch)?;
+            let remainder = filled % ENC_CHUNK_SIZE;
+            let mut lengths = vec![ENC_CHUNK_SIZE; filled / ENC_CHUNK_SIZE];
+            let end = if filled == batch.len() {
+                BatchEnd::Full
+            } else if remainder >= TAG_SIZE {
+                // A short chunk is the final one.
+                lengths.push(remainder);
+                BatchEnd::Final
+            } else {
+                // Ended on a chunk boundary (or inside a tag) without ever
+                // reaching a chunk marked final.
+                BatchEnd::Truncated
+            };
 
             let mut jobs: Vec<ChunkJob> = batch
                 .chunks_mut(ENC_CHUNK_SIZE)

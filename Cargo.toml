@@ -33,7 +33,9 @@ rand = "0.8"
 zeroize = "1.7"
 
 # Compression
-zstd = "0.13"
+# "zstdmt" lets the compressor use several cores. It only switches on code that
+# is already in the bundled zstd C library; it adds no crates.
+zstd = { version = "0.13", features = ["zstdmt"] }
 
 # CLI
 clap = { version = "4.4", features = ["derive"] }
