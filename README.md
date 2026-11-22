@@ -20,7 +20,8 @@ It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation fo
 * **Tamper-resistant headers** (AAD authentication)
 * **Optional size padding** to hide the exact plaintext size
 * **Selectable KDF strength** (`balanced` / `paranoid`)
-* **Protection against tar path traversal**
+* **Protection against hostile archives**: no path traversal, no hard links, devices or FIFOs, and nothing is ever written through a planted symlink
+* **Fuzzed and audited**: parser, stream and extraction fuzz targets, dependency audit and tests on three platforms in CI (see [SECURITY.md](SECURITY.md))
 * **Secure memory handling** (zeroize on drop)
 * **Your originals are safe by default** - the source is only deleted if you ask for it, and only after the encrypted file has been synced to disk and verified by decrypting it again
 * **No plaintext temp files** - folders and compressed payloads are streamed straight into the encryptor
@@ -40,7 +41,7 @@ It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation fo
 | **Subkey schedule**| Keyed BLAKE2b                       | Separate metadata, data, and commitment keys per file    |
 | **Authentication** | Poly1305 MAC                        | Per-chunk, over chunk index and end-of-stream marker     |
 | **Key commitment** | 32-byte BLAKE2b tag                 | Binds the file to one key; rejects a wrong one before any ciphertext work |
-| **Keyfile**        | Random 256-bit                      | Optional additional entropy                              |
+| **Keyfile**        | Random 256-bit, stored `0600`       | Optional additional entropy                              |
 | **Key Combo**      | password + optional keyfile         | Explicitly separated inputs before Argon2 derivation     |
 | **Padding**        | Padmé (optional)                    | Hides the exact plaintext size, <=12% overhead           |
 
@@ -249,11 +250,16 @@ cargo tauri build
 
 ### Testing
 
-The core crypto and file-format logic is covered by integration tests:
+The core crypto and file-format logic is covered by integration tests, including
+corruption, truncation and hostile-archive cases:
 
 ```bash
 cargo test
+cargo clippy --all-targets -- -D warnings
 ```
+
+Fuzz targets and the dependency audit are described in [SECURITY.md](SECURITY.md),
+together with the threat model and the results of the last security review.
 
 ---
 

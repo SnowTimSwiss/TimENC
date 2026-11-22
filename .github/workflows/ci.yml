@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, so a new advisory against an unchanged lockfile still shows up.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run the test suite
+        run: cargo test --all-targets
+
+  lint:
+    name: Clippy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo clippy --all-targets -- -D warnings
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      # The GUI crate's lockfile is the one that is shipped (and vendored for
+      # Flatpak), so that is the one that gets audited. Accepted advisories,
+      # with reasons, are listed in .cargo/audit.toml.
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit --file src-tauri/Cargo.lock
+
+  flatpak-sources:
+    name: Flatpak sources match the lockfile
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Regenerate and compare
+        run: |
+          python3 flatpak/generate-cargo-sources.py src-tauri/Cargo.lock flatpak/cargo-sources.json > /tmp/regenerated.json
+          diff -u flatpak/cargo-sources.json /tmp/regenerated.json
+
+  fuzz-smoke:
+    name: Fuzz smoke test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - name: Run each target briefly
+        run: |
+          cd fuzz
+          cargo fuzz run parse_headers -- -max_total_time=60 -max_len=512
+          cargo fuzz run v6_roundtrip -- -max_total_time=60 -max_len=300000
+          cargo fuzz run decrypt_file -- -max_total_time=60 -max_len=4096

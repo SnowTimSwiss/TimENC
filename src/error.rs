@@ -61,6 +61,12 @@ pub enum Error {
     #[error("Path traversal detected in archive")]
     PathTraversal,
 
+    #[error("Unsafe entry in archive: {0}")]
+    UnsafeArchiveEntry(String),
+
+    #[error("Unusable keyfile: {0}")]
+    InvalidKeyfile(String),
+
     #[error("IO error: {0}")]
     Io(String),
 
