@@ -1046,6 +1046,29 @@
       return document.getElementById(id).value.trim();
     }
 
+    // Passwords are taken exactly as typed. Trimming them (as getFieldValue does
+    // for paths) silently changes a password that starts or ends with a space,
+    // and then the command-line tool cannot open the file.
+    function getSecretValue(id) {
+      return document.getElementById(id).value;
+    }
+
+    // Empties password fields once they are no longer needed, so the secret
+    // does not sit in the page after a successful operation.
+    function clearSecretFields(ids) {
+      ids.forEach(id => {
+        const input = document.getElementById(id);
+        input.value = "";
+        input.type = "password";
+        input.dispatchEvent(new Event("input"));
+        const toggle = document.querySelector('[data-toggle="' + id + '"]');
+        if (toggle) {
+          toggle.dataset.visible = "0";
+          toggle.textContent = t("encrypt", "showBtn");
+        }
+      });
+    }
+
     function getOptionalFieldValue(id) {
       const value = getFieldValue(id);
       return value || null;
@@ -1179,6 +1202,7 @@
         } else {
           setStatus("success", msg);
           setResult(msg + path);
+          return true;
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -1188,6 +1212,7 @@
         button.disabled = false;
         button.textContent = txt;
       }
+      return false;
     }
     
     document.querySelectorAll(".nav-btn").forEach(b => {
@@ -1363,14 +1388,14 @@
         request: {
           input_path: getFieldValue("enc-input"),
           output_path: getFieldValue("enc-output"),
-          password: getFieldValue("enc-password"),
+          password: getSecretValue("enc-password"),
           keyfile_path: getOptionalFieldValue("enc-keyfile"),
           compress: document.getElementById("enc-compress").checked,
           pad: document.getElementById("enc-pad").checked,
           kdf_profile: document.getElementById("enc-paranoid").checked ? "paranoid" : "balanced",
           delete_source: document.getElementById("enc-delete").checked
         }
-      }));
+      })).then(ok => { if (ok) clearSecretFields(["enc-password", "enc-confirm"]); });
     });
     
     document.getElementById("decrypt-form").addEventListener("submit", e => {
@@ -1380,11 +1405,11 @@
         request: {
           input_path: getFieldValue("dec-input"),
           output_dir: getFieldValue("dec-output"),
-          password: getFieldValue("dec-password"),
+          password: getSecretValue("dec-password"),
           keyfile_path: getOptionalFieldValue("dec-keyfile"),
           delete_source: document.getElementById("dec-delete").checked
         }
-      }));
+      })).then(ok => { if (ok) clearSecretFields(["dec-password"]); });
     });
     
     document.getElementById("keyfile-form").addEventListener("submit", e => {
