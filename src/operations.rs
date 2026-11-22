@@ -59,7 +59,7 @@ pub fn file_format_version(path: &Path) -> Result<u8> {
 /// (terminated stream, key commitment). Truncation of such a file at a chunk
 /// boundary goes undetected, so frontends should suggest re-encrypting it.
 pub fn is_legacy_version(version: u8) -> bool {
-    matches!(version, 3 | 4 | 5)
+    (3..=5).contains(&version)
 }
 
 /// Inputs needed for an encryption run.
