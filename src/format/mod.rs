@@ -1290,7 +1290,10 @@ pub mod v6 {
     /// Results are written back into the jobs, so the caller sees them in
     /// order no matter which thread handled which chunk.
     fn run_parallel<T: Send>(jobs: &mut [T], work: impl Fn(&mut T) + Sync) {
-        let threads = crypto::worker_threads().min(jobs.len());
+        // Starting a thread costs about as much as encrypting one chunk, so each
+        // thread must get at least a few; small inputs run on the caller alone.
+        const MIN_CHUNKS_PER_THREAD: usize = 4;
+        let threads = crypto::worker_threads().min(jobs.len() / MIN_CHUNKS_PER_THREAD);
         if threads <= 1 {
             jobs.iter_mut().for_each(&work);
             return;
@@ -1363,7 +1366,7 @@ pub mod v6 {
                 keys,
                 header,
                 header_bytes,
-                pending: Zeroizing::new(Vec::with_capacity(BATCH_BYTES + 1)),
+                pending: Zeroizing::new(Vec::with_capacity(CHUNK_SIZE)),
                 index: 0,
                 written: 0,
                 expected_len: metadata.payload_len,
@@ -1449,10 +1452,30 @@ pub mod v6 {
             Ok(())
         }
 
+        /// Makes room for `extra` more bytes in `pending`.
+        ///
+        /// The buffer starts at one chunk and doubles up to a full batch, so a
+        /// small file does not pay for (or have to wipe) 4 MiB. It grows by
+        /// moving into a new zeroizing buffer rather than letting `Vec`
+        /// reallocate, so no unwiped copy of the plaintext is left behind.
+        fn reserve_pending(&mut self, extra: usize) {
+            let needed = self.pending.len() + extra;
+            if needed <= self.pending.capacity() {
+                return;
+            }
+            let capacity = needed
+                .max(self.pending.capacity() * 2)
+                .min(BATCH_BYTES + 1);
+            let mut grown = Zeroizing::new(Vec::with_capacity(capacity));
+            grown.extend_from_slice(&self.pending);
+            self.pending = grown;
+        }
+
         fn push(&mut self, mut data: &[u8]) -> Result<()> {
             while !data.is_empty() {
                 let room = BATCH_BYTES + 1 - self.pending.len();
                 let take = room.min(data.len());
+                self.reserve_pending(take);
                 self.pending.extend_from_slice(&data[..take]);
                 data = &data[take..];
 
@@ -1546,11 +1569,22 @@ pub mod v6 {
 
         let header_bytes = header.to_bytes()?;
 
-        let mut batch = Zeroizing::new(vec![0u8; BATCH_CHUNKS * ENC_CHUNK_SIZE]);
+        // The batch buffer starts at one chunk and doubles up to a full batch,
+        // so decrypting a small file does not allocate and wipe 4 MiB.
+        let mut batch = Zeroizing::new(Vec::<u8>::new());
+        let mut slots = 1usize;
         let mut index: u64 = 0;
         let mut written: u64 = 0;
 
         loop {
+            if batch.len() < slots * ENC_CHUNK_SIZE {
+                // A fresh buffer, not `resize`: that could free the old one
+                // with the previous batch's plaintext still in it, unwiped.
+                // Dropping the old `Zeroizing` buffer wipes it.
+                batch = Zeroizing::new(vec![0u8; slots * ENC_CHUNK_SIZE]);
+            }
+            slots = (slots * 2).min(BATCH_CHUNKS);
+
             // One read for the whole batch: the slots are contiguous, so chunk
             // boundaries follow from how much arrived.
             let filled = read_chunk(input, &mut batch)?;
