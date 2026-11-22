@@ -84,9 +84,10 @@ ML-KEM), never post-quantum alone.
 1. You select a **file or directory**.
 2. Directories are packed as a **TAR stream** (symlinks are stored as links, never
    followed), and the payload is compressed with zstd if you asked for it. This
-   happens in memory, streaming: no unencrypted copy is ever written to disk. The
-   source is read twice - once to measure the exact payload length the metadata
-   records, once to encrypt it.
+   happens in memory, streaming: no unencrypted copy is ever written to disk. A
+   single file is read once (its size is its payload length); folders and
+   compressed payloads are read twice - once to measure the exact length the
+   metadata records, once to encrypt them.
 3. It derives a **master key** from your password and optional keyfile using
    Argon2id, then splits it into separate **metadata, data, and commitment
    subkeys** with keyed BLAKE2b.
@@ -100,6 +101,31 @@ ML-KEM), never post-quantum alone.
    without any ciphertext work), then metadata and every payload chunk are
    authenticated, and the
    stream is rejected unless it ends at the chunk marked final.
+
+### Performance
+
+Encryption and decryption work on batches of 4 MiB and use every available core
+(up to 8) for ChaCha20-Poly1305 and for zstd compression. The file format is
+unchanged, so files written by any version open with any other.
+
+Measured on a 4-core cloud VM with the data in the page cache, medians of
+repeated runs, including the fixed ~0.6 s Argon2id cost of every operation:
+
+| Case | Before | After |
+| ---- | -----: | ----: |
+| 1 GiB random file, encrypt | 4.5 s | 2.4 s |
+| 1 GiB random file, decrypt | 2.8 s | 2.3 s |
+| 512 MiB text, encrypt with `--compress` | 8.9 s | 3.0 s |
+| Folder of 20,000 files (320 MiB), encrypt | 2.0 s | 1.5 s |
+| Folder of 20,000 files (320 MiB), decrypt | 6.1 s | 2.0 s |
+
+What is left is mostly the durability guarantee: the output is `fsync`ed before
+it is moved into place, which costs about a second per GiB on this VM's disk.
+On RAM-backed storage, 1 GiB encrypts at roughly 1 GB/s of net throughput.
+Your numbers will differ; they depend on your disk far more than on the cipher.
+
+Set `TIMENC_THREADS=1` to disable multithreading, or to another number to limit
+it.
 
 ### Safe file handling
 
@@ -214,6 +240,9 @@ the process list and your shell history.
 | `--kdf-profile` | Argon2id cost profile: `balanced` (default) or `paranoid` (encrypt only) |
 | `--delete-source` | Delete the source after success (off by default; encrypt verifies the output first) |
 | `-h, --help` | Show help message |
+
+Environment: `TIMENC_THREADS=<n>` limits the number of worker threads (default: number of cores, at most 8).
+
 | `-V, --version` | Show version information |
 
 ---

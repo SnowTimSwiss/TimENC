@@ -373,3 +373,36 @@ fn output_names_must_be_exactly_one_plain_component() {
         assert!(sanitize_output_name(bad).is_err(), "{bad:?} was accepted");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Compression determinism
+// ---------------------------------------------------------------------------
+
+/// Compressed payloads are measured in one pass and encrypted in a second one;
+/// the two must agree on the compressed length or encryption fails with
+/// `SourceChanged`. Multithreaded zstd is deterministic, and this keeps it so.
+#[test]
+fn compressed_encryption_never_reports_a_changed_source() {
+    let work = tempdir().unwrap();
+
+    // Compressible, and large enough to span several multithreaded zstd jobs.
+    let mut text = String::new();
+    let mut state = 7u64;
+    while text.len() < 24 * 1024 * 1024 {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        text.push_str(&format!("line {} of some fairly repetitive text\n", (state >> 40) % 5000));
+    }
+    let input = write_file(work.path(), "text.txt", text.as_bytes());
+
+    for round in 0..4 {
+        let output = work.path().join(format!("out-{round}.timenc"));
+        let mut opts = timenc::EncryptOptions::new(PASSWORD.to_string(), output.clone());
+        opts.compress = true;
+        opts.kdf_profile = timenc::KdfProfile::Balanced;
+        timenc::encrypt(&input, opts).unwrap_or_else(|e| panic!("round {round}: {e}"));
+
+        let restored = work.path().join(format!("restored-{round}"));
+        decrypt(&output, options(&restored)).unwrap();
+        assert!(fs::read(restored.join("text.txt")).unwrap() == text.as_bytes());
+    }
+}
