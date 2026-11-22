@@ -26,7 +26,10 @@ impl From<KdfProfileRequest> for KdfProfile {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+/// Deliberately not `Serialize`, and `Debug` redacts the password: this struct
+/// holds the secret as it arrives from the webview, and a stray `{:?}` or a
+/// serializer must never be able to write it into a log.
+#[derive(Deserialize)]
 pub struct EncryptRequest {
     input_path: PathBuf,
     output_path: PathBuf,
@@ -42,7 +45,7 @@ pub struct EncryptRequest {
     delete_source: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Deserialize)]
 pub struct DecryptRequest {
     input_path: PathBuf,
     output_dir: PathBuf,
@@ -50,6 +53,33 @@ pub struct DecryptRequest {
     keyfile_path: Option<PathBuf>,
     #[serde(default)]
     delete_source: bool,
+}
+
+impl std::fmt::Debug for EncryptRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EncryptRequest")
+            .field("input_path", &self.input_path)
+            .field("output_path", &self.output_path)
+            .field("password", &"<redacted>")
+            .field("keyfile_path", &self.keyfile_path)
+            .field("compress", &self.compress)
+            .field("kdf_profile", &self.kdf_profile)
+            .field("pad", &self.pad)
+            .field("delete_source", &self.delete_source)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for DecryptRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DecryptRequest")
+            .field("input_path", &self.input_path)
+            .field("output_dir", &self.output_dir)
+            .field("password", &"<redacted>")
+            .field("keyfile_path", &self.keyfile_path)
+            .field("delete_source", &self.delete_source)
+            .finish()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -149,16 +179,29 @@ async fn encrypt_file(request: EncryptRequest) -> Result<OperationResult, String
 #[tauri::command]
 async fn decrypt_file(request: DecryptRequest) -> Result<OperationResult, String> {
     run_blocking(move || {
+        // Checked up front: the file may be deleted by the decryption itself.
+        let legacy_version = timenc::operations::file_format_version(&request.input_path)
+            .ok()
+            .filter(|version| timenc::operations::is_legacy_version(*version));
+
         let options = DecryptOptions {
             password: request.password,
             keyfile_path: request.keyfile_path,
             output_dir: request.output_dir,
             delete_source: request.delete_source,
         };
-        OperationResult::from_result(
+        let mut result = OperationResult::from_result(
             decrypt(&request.input_path, options),
             "File decrypted successfully",
-        )
+        );
+        if let (true, Some(version)) = (result.success, legacy_version) {
+            result.message = format!(
+                "{} - but this file uses the old v{} format, which cannot detect a truncated \
+                 file. Encrypt the result again to upgrade it.",
+                result.message, version
+            );
+        }
+        result
     })
     .await
 }
@@ -183,6 +226,8 @@ async fn get_launch_context(state: State<'_, AppState>) -> Result<LaunchContext,
 }
 
 fn main() {
+    timenc::hardening::disable_core_dumps();
+
     let initial_open_file = find_timenc_path(std::env::args_os().skip(1));
 
     tauri::Builder::default()

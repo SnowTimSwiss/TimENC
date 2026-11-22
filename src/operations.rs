@@ -720,7 +720,6 @@ fn has_unsafe_path_components(path: &Path) -> bool {
 /// outside the output directory), FIFOs, character and block devices - is
 /// refused rather than recreated on the victim's machine.
 fn ensure_supported_entry_type(kind: tar::EntryType) -> Result<()> {
-
     if kind.is_file() || kind.is_dir() || kind.is_symlink() || kind.is_pax_global_extensions() {
         return Ok(());
     }

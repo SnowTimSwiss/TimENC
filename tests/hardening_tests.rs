@@ -328,3 +328,30 @@ fn legacy_format_versions_are_reported_for_a_warning() {
     // Prevent an unused-import warning on platforms where no test above needs it.
     let _ = Write::flush(&mut std::io::sink());
 }
+
+// ---------------------------------------------------------------------------
+// Process hardening
+// ---------------------------------------------------------------------------
+
+#[cfg(unix)]
+#[test]
+fn core_dumps_can_be_disabled() {
+    timenc::hardening::disable_core_dumps();
+
+    let mut limit = libc::rlimit {
+        rlim_cur: 1,
+        rlim_max: 1,
+    };
+    let rc = unsafe { libc::getrlimit(libc::RLIMIT_CORE, &mut limit) };
+    assert_eq!(rc, 0);
+    assert_eq!(limit.rlim_cur, 0);
+    assert_eq!(limit.rlim_max, 0);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn memory_inspection_can_be_disabled() {
+    timenc::hardening::disable_memory_inspection();
+    let dumpable = unsafe { libc::prctl(libc::PR_GET_DUMPABLE) };
+    assert_eq!(dumpable, 0);
+}
