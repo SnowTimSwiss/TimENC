@@ -40,6 +40,18 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="3.2.0" date="2026-11-22">
+      <description>
+        <p>Security hardening and faster encryption.</p>
+        <ul>
+          <li>Encrypting and decrypting large files and folders is up to two to three times faster.</li>
+          <li>Keyfiles are now created readable by their owner only.</li>
+          <li>Hostile archives can no longer plant hard links, devices or pipes when extracted.</li>
+          <li>Passwords are no longer trimmed of leading or trailing spaces, and are cleared from the window after use.</li>
+          <li>Updated dependencies with known security advisories.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.1.0" date="2026-09-27">
       <description>
         <p>Safer file handling.</p>
