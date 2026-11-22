@@ -69,6 +69,14 @@ and a fuzz target. The findings were in the code *around* the cipher.
 | 9 | Medium | `cargo audit` reported advisories in `zstd`, `zstd-safe` and `zstd-sys` (used to decompress decrypted data) and in `url`, `rand`, `rustix`, `tokio`, `anyhow`, `event-listener`. | Fixed by updating the lockfile; Flatpak sources regenerated |
 | 10 | Info | Nothing ran the tests or audited dependencies. | CI added |
 
+The multithreaded stream code added afterwards (see Performance in the README)
+is checked against an independent, sequential implementation of the format
+written from its description: the ciphertext must be byte-for-byte identical at
+every batch edge and for 1, 3 and 8 threads, and truncation, reordering and
+bit flips across batch boundaries must fail exactly as before. Files written
+before and after that change were also confirmed to open with either version
+in every mode.
+
 ### Known limitations (deliberately not changed)
 
 * **Formats v3, v4 and v4.5 cannot detect truncation at a chunk boundary.** They
