@@ -20,7 +20,9 @@ path = "src/main.rs"
 [dependencies]
 # Cryptography
 chacha20poly1305 = "0.10"
-argon2 = "0.5"
+# "zeroize" wipes the Argon2 working memory (256 MiB - 1 GiB of password-derived
+# blocks) when a derivation finishes, instead of leaving it to the allocator.
+argon2 = { version = "0.5", features = ["zeroize"] }
 # Keyed BLAKE2b is the PRF behind the v6 subkey schedule. Argon2id is already
 # built on BLAKE2b, so this is a direct dependency on code that was in the
 # trust base (and in the lockfile) either way - no new supply-chain surface.
@@ -43,6 +45,10 @@ thiserror = "2"
 tar = "0.4"
 tempfile = "3.10"
 dirs = "5.0"
+
+[target.'cfg(unix)'.dependencies]
+# Core-dump and ptrace hardening (src/hardening.rs).
+libc = "0.2"
 
 [profile.release]
 opt-level = 3

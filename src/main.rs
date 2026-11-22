@@ -160,6 +160,9 @@ enum Commands {
 }
 
 fn main() {
+    timenc::hardening::disable_core_dumps();
+    timenc::hardening::disable_memory_inspection();
+
     let cli = Cli::parse();
 
     let result = match cli.command {
@@ -193,15 +196,27 @@ fn main() {
             keyfile,
             delete_source,
         } => password.resolve(false).and_then(|password| {
+            let legacy_version = timenc::operations::file_format_version(&input)
+                .ok()
+                .filter(|version| timenc::operations::is_legacy_version(*version));
             let options = DecryptOptions {
                 password,
                 keyfile_path: keyfile,
                 output_dir: output,
                 delete_source,
             };
-            decrypt(&input, options)
+            let result = decrypt(&input, options)
                 .map(|_| ())
-                .map_err(|e| e.to_string())
+                .map_err(|e| e.to_string());
+            if let (Ok(()), Some(version)) = (&result, legacy_version) {
+                eprintln!(
+                    "Warning: {} uses the old v{} format, which cannot detect a truncated \
+                     file. Encrypt the result again to upgrade it to the current format.",
+                    input.display(),
+                    version
+                );
+            }
+            result
         }),
         Commands::GenerateKeyfile { output } => generate_keyfile(&output)
             .map(|_| ())

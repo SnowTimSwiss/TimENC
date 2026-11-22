@@ -5,6 +5,7 @@
 pub mod crypto;
 pub mod format;
 pub mod error;
+pub mod hardening;
 pub mod operations;
 
 pub use crypto::{KdfParams, KdfProfile};
