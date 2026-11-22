@@ -59,7 +59,9 @@ fn reference_file(plaintext: &[u8], pad: bool, salt: [u8; 16]) -> Vec<u8> {
 
     let key = data_key(&salt);
     let mut pieces: Vec<&[u8]> = body.chunks(CHUNK_SIZE).collect();
-    if body.len() % CHUNK_SIZE == 0 {
+    #[allow(unknown_lints, clippy::manual_is_multiple_of)]
+    let whole_chunks = body.len() % CHUNK_SIZE == 0;
+    if whole_chunks {
         pieces.push(&[]); // an empty final chunk follows a whole number of chunks
     }
     let last = pieces.len() - 1;
