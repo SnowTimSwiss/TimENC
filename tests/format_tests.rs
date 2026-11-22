@@ -20,7 +20,7 @@ fn test_header_serialization_v3() {
     let (parsed_header, _) = Header::from_bytes(&bytes).expect("Failed to parse header");
     
     assert_eq!(parsed_header.version, 3);
-    assert_eq!(parsed_header.is_dir, false);
+    assert!(!parsed_header.is_dir);
     assert_eq!(parsed_header.original_name, "test.txt");
     assert_eq!(parsed_header.salt, salt);
     assert_eq!(parsed_header.nonce, nonce);
@@ -44,7 +44,7 @@ fn test_header_with_directory() {
     let bytes = header.to_bytes().expect("Failed to serialize header");
     let (parsed_header, _) = Header::from_bytes(&bytes).expect("Failed to parse header");
     
-    assert_eq!(parsed_header.is_dir, true);
+    assert!(parsed_header.is_dir);
     assert_eq!(parsed_header.original_name, "my_folder");
 }
 

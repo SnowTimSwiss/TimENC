@@ -14,7 +14,7 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
     ChaCha20Poly1305,
 };
-use rand::RngCore;
+use rand::{rngs::OsRng, RngCore};
 use zeroize::{Zeroize, Zeroizing};
 
 /// ChaCha20-Poly1305 key length in bytes.
@@ -234,21 +234,21 @@ pub fn derive_subkey(master: &[u8; KEY_LEN], label: &[u8]) -> Result<Zeroizing<[
 /// Generates a random Argon2 salt.
 pub fn generate_salt() -> [u8; SALT_SIZE] {
     let mut salt = [0u8; SALT_SIZE];
-    rand::thread_rng().fill_bytes(&mut salt);
+    OsRng.fill_bytes(&mut salt);
     salt
 }
 
 /// Generates a random AEAD nonce.
 pub fn generate_nonce() -> [u8; NONCE_SIZE] {
     let mut nonce = [0u8; NONCE_SIZE];
-    rand::thread_rng().fill_bytes(&mut nonce);
+    OsRng.fill_bytes(&mut nonce);
     nonce
 }
 
 /// Generates random keyfile material.
 pub fn generate_keyfile_data() -> [u8; 32] {
     let mut keyfile = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut keyfile);
+    OsRng.fill_bytes(&mut keyfile);
     keyfile
 }
 

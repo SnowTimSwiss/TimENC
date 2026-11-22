@@ -220,7 +220,13 @@ pub fn sanitize_output_name(name: &str) -> Result<&str> {
     let path = Path::new(name);
     let mut components = path.components();
     match (components.next(), components.next()) {
-        (Some(std::path::Component::Normal(component)), None) if !component.is_empty() => {
+        // `Path` normalises away a trailing separator and a trailing `.`, so
+        // "name/" and "name/." parse as the single component "name". The
+        // component must be the entire string, or the name that gets joined
+        // onto the output directory is not the name that was validated.
+        (Some(std::path::Component::Normal(component)), None)
+            if component == std::ffi::OsStr::new(name) && !name.contains('\0') =>
+        {
             Ok(name)
         }
         _ => Err(Error::PathTraversal),
