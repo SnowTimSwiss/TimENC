@@ -67,12 +67,14 @@ Everything else stays identical.
 Any time `src-tauri/Cargo.lock` changes (new/updated dependency):
 
 ```sh
-pip install aiohttp toml tomlkit
-python flatpak-cargo-generator.py src-tauri/Cargo.lock -o flatpak/cargo-sources.json
+python3 flatpak/generate-cargo-sources.py src-tauri/Cargo.lock flatpak/cargo-sources.json > /tmp/sources.json
+mv /tmp/sources.json flatpak/cargo-sources.json
 ```
 
-Get the generator from
-https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo .
+The script covers registry-only lockfiles, which is all this project has, and
+CI fails if the committed file does not match the lockfile. If a git dependency
+is ever added it refuses to run; use `flatpak-cargo-generator.py` from
+https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo then.
 
 ## Likely reviewer questions
 
