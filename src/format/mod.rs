@@ -1265,6 +1265,52 @@ pub mod v6 {
         Ok(header)
     }
 
+    /// Chunks handled together by one parallel batch.
+    ///
+    /// 64 chunks are 4 MiB: big enough that spawning worker threads costs well
+    /// under 1% of the batch, small enough to stay in a core's L2/L3 cache and
+    /// to keep memory use trivial.
+    const BATCH_CHUNKS: usize = 64;
+    const BATCH_BYTES: usize = BATCH_CHUNKS * CHUNK_SIZE;
+
+    /// One chunk handed to a worker thread.
+    struct ChunkJob<'a> {
+        index: u64,
+        is_final: bool,
+        /// Plaintext on the way in and ciphertext on the way out when
+        /// encrypting; ciphertext with its trailing tag when decrypting.
+        data: &'a mut [u8],
+        /// Tag produced by encryption.
+        tag: [u8; TAG_SIZE],
+        ok: bool,
+    }
+
+    /// Runs `work` on every job, giving each thread one contiguous run of jobs.
+    ///
+    /// Results are written back into the jobs, so the caller sees them in
+    /// order no matter which thread handled which chunk.
+    fn run_parallel<T: Send>(jobs: &mut [T], work: impl Fn(&mut T) + Sync) {
+        let threads = crypto::worker_threads().min(jobs.len());
+        if threads <= 1 {
+            jobs.iter_mut().for_each(&work);
+            return;
+        }
+
+        let per_thread = jobs.len().div_ceil(threads);
+        let work = &work;
+        std::thread::scope(|scope| {
+            let mut groups = jobs.chunks_mut(per_thread);
+            let first = groups.next();
+            for group in groups {
+                scope.spawn(move || group.iter_mut().for_each(work));
+            }
+            // The calling thread takes a share instead of just waiting.
+            if let Some(group) = first {
+                group.iter_mut().for_each(work);
+            }
+        });
+    }
+
     /// A [`Write`] adapter that encrypts everything written to it as a v6
     /// file.
     ///
@@ -1273,16 +1319,23 @@ pub mod v6 {
     /// directly, so no plaintext intermediate ever has to touch the disk.
     ///
     /// The header and encrypted metadata are written by [`EncryptWriter::new`].
-    /// Payload bytes are buffered one chunk at a time; a full chunk is only
-    /// emitted once more data arrives, so that [`EncryptWriter::finish`] can
-    /// always mark a short (possibly empty) chunk as final - exactly the
-    /// layout the reader-based encryptor produces.
+    /// Payload bytes are collected into batches of [`BATCH_CHUNKS`] chunks,
+    /// which are encrypted in parallel on the available cores and written out
+    /// in order. A batch is only emitted once more data has arrived behind it,
+    /// so that [`EncryptWriter::finish`] can always mark the last (possibly
+    /// empty) chunk as final.
+    ///
+    /// The bytes on disk are identical in layout to what a sequential
+    /// encryptor produces, so any v6 reader can open the result.
     pub struct EncryptWriter<'a, W: Write> {
         output: W,
         keys: &'a FileKeys,
         header: Header,
         header_bytes: Vec<u8>,
-        buffer: Zeroizing<Vec<u8>>,
+        /// Plaintext waiting for a batch to fill; never more than one byte
+        /// over [`BATCH_BYTES`], because that extra byte is what proves the
+        /// first [`BATCH_BYTES`] are not the end of the stream.
+        pending: Zeroizing<Vec<u8>>,
         index: u64,
         written: u64,
         expected_len: u64,
@@ -1310,7 +1363,7 @@ pub mod v6 {
                 keys,
                 header,
                 header_bytes,
-                buffer: Zeroizing::new(Vec::with_capacity(CHUNK_SIZE)),
+                pending: Zeroizing::new(Vec::with_capacity(BATCH_BYTES + 1)),
                 index: 0,
                 written: 0,
                 expected_len: metadata.payload_len,
@@ -1323,28 +1376,85 @@ pub mod v6 {
             &self.header
         }
 
-        fn emit_chunk(&mut self, is_final: bool) -> Result<()> {
-            let ciphertext = crypto::encrypt_chunk(
-                &self.keys.data_key,
-                &chunk_nonce(self.index),
-                &self.buffer,
-                &data_aad(&self.header_bytes, self.index, is_final),
-            )
-            .map_err(Error::from)?;
-            self.output.write_all(&ciphertext)?;
-            self.buffer.clear();
-            self.index += 1;
+        /// Encrypts the first `take` buffered bytes as consecutive chunks and
+        /// writes them out. With `finish` set, the last chunk is the final one,
+        /// and an empty final chunk is added when `take` is a whole number of
+        /// chunks (including zero), exactly as the sequential layout requires.
+        fn seal(&mut self, take: usize, finish: bool) -> Result<()> {
+            let Self {
+                output,
+                keys,
+                header_bytes,
+                pending,
+                index,
+                ..
+            } = self;
+
+            let mut jobs: Vec<ChunkJob> = pending[..take]
+                .chunks_mut(CHUNK_SIZE)
+                .enumerate()
+                .map(|(offset, data)| ChunkJob {
+                    index: *index + offset as u64,
+                    is_final: false,
+                    data,
+                    tag: [0; TAG_SIZE],
+                    ok: true,
+                })
+                .collect();
+
+            if finish {
+                if take % CHUNK_SIZE == 0 {
+                    jobs.push(ChunkJob {
+                        index: *index + jobs.len() as u64,
+                        is_final: true,
+                        data: &mut [],
+                        tag: [0; TAG_SIZE],
+                        ok: true,
+                    });
+                } else if let Some(last) = jobs.last_mut() {
+                    last.is_final = true;
+                }
+            }
+
+            let data_key = &keys.data_key;
+            let header_bytes: &[u8] = header_bytes;
+            run_parallel(&mut jobs, |job| {
+                match crypto::encrypt_chunk_in_place(
+                    data_key,
+                    &chunk_nonce(job.index),
+                    job.data,
+                    &data_aad(header_bytes, job.index, job.is_final),
+                ) {
+                    Ok(tag) => job.tag = tag,
+                    Err(_) => job.ok = false,
+                }
+            });
+
+            let count = jobs.len();
+            for job in &jobs {
+                if !job.ok {
+                    return Err(Error::Encryption("chunk encryption failed".into()));
+                }
+                output.write_all(job.data)?;
+                output.write_all(&job.tag)?;
+            }
+            drop(jobs);
+
+            pending.drain(..take);
+            *index += count as u64;
             Ok(())
         }
 
         fn push(&mut self, mut data: &[u8]) -> Result<()> {
             while !data.is_empty() {
-                if self.buffer.len() == CHUNK_SIZE {
-                    self.emit_chunk(false)?;
-                }
-                let take = (CHUNK_SIZE - self.buffer.len()).min(data.len());
-                self.buffer.extend_from_slice(&data[..take]);
+                let room = BATCH_BYTES + 1 - self.pending.len();
+                let take = room.min(data.len());
+                self.pending.extend_from_slice(&data[..take]);
                 data = &data[take..];
+
+                if self.pending.len() > BATCH_BYTES {
+                    self.seal(BATCH_BYTES, false)?;
+                }
             }
             Ok(())
         }
@@ -1372,12 +1482,8 @@ pub mod v6 {
                 }
             }
 
-            // A file whose (padded) length is an exact multiple of CHUNK_SIZE
-            // ends with an empty final chunk, which is tag-only on disk.
-            if self.buffer.len() == CHUNK_SIZE {
-                self.emit_chunk(false)?;
-            }
-            self.emit_chunk(true)?;
+            let take = self.pending.len();
+            self.seal(take, true)?;
 
             self.output.flush()?;
             Ok(self.output)
@@ -1386,6 +1492,15 @@ pub mod v6 {
 
     impl<W: Write> Write for EncryptWriter<'_, W> {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            // Refuse to run past the declared length instead of encrypting an
+            // unbounded stream (a file that keeps growing, a device node) only
+            // to report the mismatch at the very end.
+            if self.written.saturating_add(buf.len() as u64) > self.expected_len {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    crate::error::PayloadOverflow,
+                ));
+            }
             self.push(buf).map_err(io::Error::other)?;
             self.written += buf.len() as u64;
             Ok(buf.len())
@@ -1401,10 +1516,13 @@ pub mod v6 {
     /// Decrypts the payload into `output`, writing exactly
     /// `metadata.payload_len` bytes and discarding any padding.
     ///
-    /// Fails with [`Error::TruncatedFile`] if the stream ends before the chunk
-    /// marked final, [`Error::TrailingData`] if anything follows it, and
-    /// [`Error::DecryptionFailed`] if any chunk fails authentication - which
-    /// covers reordered, duplicated, and modified chunks.
+    /// Chunks are read in batches of [`BATCH_CHUNKS`], decrypted in parallel,
+    /// and written out in order. Behaviour is the same as decrypting one chunk
+    /// at a time: it fails with [`Error::TruncatedFile`] if the stream ends
+    /// before the chunk marked final, [`Error::TrailingData`] if anything
+    /// follows it, and [`Error::DecryptionFailed`] if any chunk fails
+    /// authentication - which covers reordered, duplicated, and modified
+    /// chunks. Output is written only for chunks before the first failure.
     pub fn decrypt_streaming<R: Read, W: Write>(
         input: &mut R,
         output: &mut W,
@@ -1412,47 +1530,97 @@ pub mod v6 {
         metadata: &Metadata,
         keys: &FileKeys,
     ) -> Result<()> {
+        enum BatchEnd {
+            /// Every slot was full; more chunks may follow.
+            Full,
+            /// The last chunk read was short, so it is the final one.
+            Final,
+            /// The stream ended where a chunk should have started or
+            /// finished: it never reached a chunk marked final.
+            Truncated,
+        }
+
         let header_bytes = header.to_bytes()?;
 
-        let mut encrypted_buffer = [0u8; ENC_CHUNK_SIZE];
+        let mut batch = Zeroizing::new(vec![0u8; BATCH_CHUNKS * ENC_CHUNK_SIZE]);
         let mut index: u64 = 0;
         let mut written: u64 = 0;
 
         loop {
-            let bytes_read = read_chunk(input, &mut encrypted_buffer)?;
-            if bytes_read < TAG_SIZE {
-                // Either the file was cut at a chunk boundary or the final
-                // chunk itself is incomplete. Both mean the stream never
-                // reached the chunk that claims to be final.
-                return Err(Error::TruncatedFile);
+            let mut lengths = Vec::with_capacity(BATCH_CHUNKS);
+            let mut end = BatchEnd::Full;
+            for slot in batch.chunks_mut(ENC_CHUNK_SIZE) {
+                let bytes_read = read_chunk(input, slot)?;
+                if bytes_read < TAG_SIZE {
+                    end = BatchEnd::Truncated;
+                    break;
+                }
+                lengths.push(bytes_read);
+                if bytes_read < ENC_CHUNK_SIZE {
+                    end = BatchEnd::Final;
+                    break;
+                }
             }
 
-            let is_final = bytes_read < ENC_CHUNK_SIZE;
+            let mut jobs: Vec<ChunkJob> = batch
+                .chunks_mut(ENC_CHUNK_SIZE)
+                .zip(&lengths)
+                .enumerate()
+                .map(|(offset, (slot, &length))| ChunkJob {
+                    index: index + offset as u64,
+                    is_final: length < ENC_CHUNK_SIZE,
+                    data: &mut slot[..length],
+                    tag: [0; TAG_SIZE],
+                    ok: true,
+                })
+                .collect();
 
-            let plaintext = crypto::decrypt_chunk(
-                &keys.data_key,
-                &chunk_nonce(index),
-                &encrypted_buffer[..bytes_read],
-                &data_aad(&header_bytes, index, is_final),
-            )
-            .map_err(|_| Error::DecryptionFailed)?;
+            let data_key = &keys.data_key;
+            let header_bytes: &[u8] = &header_bytes;
+            run_parallel(&mut jobs, |job| {
+                let split = job.data.len() - TAG_SIZE;
+                let (ciphertext, tag) = job.data.split_at_mut(split);
+                let Ok(tag) = <[u8; TAG_SIZE]>::try_from(&*tag) else {
+                    job.ok = false;
+                    return;
+                };
+                job.ok = crypto::decrypt_chunk_in_place(
+                    data_key,
+                    &chunk_nonce(job.index),
+                    ciphertext,
+                    &tag,
+                    &data_aad(header_bytes, job.index, job.is_final),
+                )
+                .is_ok();
+            });
 
-            // Everything past payload_len is padding and must not be emitted.
-            let remaining = metadata.payload_len.saturating_sub(written);
-            let keep = (plaintext.len() as u64).min(remaining) as usize;
-            output.write_all(&plaintext[..keep])?;
-            written += keep as u64;
+            for job in &jobs {
+                if !job.ok {
+                    return Err(Error::DecryptionFailed);
+                }
+                let plaintext = &job.data[..job.data.len() - TAG_SIZE];
 
-            index += 1;
-            if is_final {
-                break;
+                // Everything past payload_len is padding and must not be emitted.
+                let remaining = metadata.payload_len.saturating_sub(written);
+                let keep = (plaintext.len() as u64).min(remaining) as usize;
+                output.write_all(&plaintext[..keep])?;
+                written += keep as u64;
+            }
+            index += jobs.len() as u64;
+            drop(jobs);
+
+            match end {
+                BatchEnd::Full => {}
+                BatchEnd::Final => break,
+                BatchEnd::Truncated => return Err(Error::TruncatedFile),
             }
         }
 
         // A legitimate final chunk is always shorter than ENC_CHUNK_SIZE, so
         // appended bytes would already have broken its tag. Checked anyway so
         // that the guarantee does not rest on that argument alone.
-        if input.read(&mut encrypted_buffer[..1])? != 0 {
+        let mut probe = [0u8; 1];
+        if input.read(&mut probe)? != 0 {
             return Err(Error::TrailingData);
         }
 
