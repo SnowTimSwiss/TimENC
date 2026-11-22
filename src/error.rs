@@ -86,8 +86,26 @@ impl From<chacha20poly1305::Error> for Error {
     }
 }
 
+/// Raised by the v6 encryptor when a producer writes more bytes than the
+/// payload length it declared. Travels through `io::Error` because it surfaces
+/// from `Write::write`, and is turned into [`Error::SourceChanged`] on the way
+/// back out.
+#[derive(Debug)]
+pub struct PayloadOverflow;
+
+impl std::fmt::Display for PayloadOverflow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("more payload than the length recorded in the metadata")
+    }
+}
+
+impl std::error::Error for PayloadOverflow {}
+
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
+        if e.get_ref().is_some_and(|inner| inner.is::<PayloadOverflow>()) {
+            return Error::SourceChanged;
+        }
         Error::Io(e.to_string())
     }
 }

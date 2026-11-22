@@ -11,8 +11,8 @@ use blake2::{
     Blake2bMac512,
 };
 use chacha20poly1305::{
-    aead::{Aead, KeyInit, Payload},
-    ChaCha20Poly1305,
+    aead::{Aead, AeadInPlace, KeyInit, Payload},
+    ChaCha20Poly1305, Tag,
 };
 use rand::{rngs::OsRng, RngCore};
 use zeroize::{Zeroize, Zeroizing};
@@ -274,4 +274,53 @@ pub fn decrypt_chunk(
     let cipher = ChaCha20Poly1305::new_from_slice(key)
         .map_err(|_| chacha20poly1305::Error)?;
     cipher.decrypt(nonce.into(), Payload { msg: ciphertext, aad })
+}
+
+/// Encrypts one chunk in place and returns its authentication tag.
+///
+/// The streaming formats use this instead of [`encrypt_chunk`] on their hot
+/// path: it needs no per-chunk allocation, and the plaintext is overwritten by
+/// the ciphertext instead of lingering in a second buffer.
+pub fn encrypt_chunk_in_place(
+    key: &[u8; KEY_LEN],
+    nonce: &[u8; NONCE_SIZE],
+    buffer: &mut [u8],
+    aad: &[u8],
+) -> std::result::Result<[u8; TAG_SIZE], chacha20poly1305::Error> {
+    let cipher = ChaCha20Poly1305::new_from_slice(key).map_err(|_| chacha20poly1305::Error)?;
+    let tag = cipher.encrypt_in_place_detached(nonce.into(), aad, buffer)?;
+    Ok(tag.into())
+}
+
+/// Decrypts one chunk in place, given its detached authentication tag.
+///
+/// On failure the buffer holds unauthenticated bytes and must not be used.
+pub fn decrypt_chunk_in_place(
+    key: &[u8; KEY_LEN],
+    nonce: &[u8; NONCE_SIZE],
+    buffer: &mut [u8],
+    tag: &[u8; TAG_SIZE],
+    aad: &[u8],
+) -> std::result::Result<(), chacha20poly1305::Error> {
+    let cipher = ChaCha20Poly1305::new_from_slice(key).map_err(|_| chacha20poly1305::Error)?;
+    cipher.decrypt_in_place_detached(nonce.into(), aad, buffer, Tag::from_slice(tag))
+}
+
+/// Number of worker threads the streaming formats may use.
+///
+/// Defaults to the number of available cores, capped at 8: beyond that the
+/// per-batch hand-off costs more than the extra cores give back. The
+/// `TIMENC_THREADS` environment variable overrides it (`1` disables
+/// parallelism), which is mostly useful for benchmarking and debugging.
+pub fn worker_threads() -> usize {
+    if let Some(requested) = std::env::var("TIMENC_THREADS")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+    {
+        return requested.clamp(1, 64);
+    }
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(8)
 }

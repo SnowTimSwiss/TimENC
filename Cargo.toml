@@ -70,3 +70,13 @@ assets = [
     ["target/release/timenc", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/timenc/", "644"],
 ]
+
+# Optimise debug and test builds. The tests run Argon2id (256 MiB) and
+# ChaCha20-Poly1305 over megabytes of data many times, which is unusably slow at
+# opt-level 0. Dependencies get full optimisation; the crate's own code a light
+# one, so it still debugs reasonably.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
