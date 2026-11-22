@@ -184,16 +184,25 @@ async fn decrypt_file(request: DecryptRequest) -> Result<OperationResult, String
             .ok()
             .filter(|version| timenc::operations::is_legacy_version(*version));
 
-        let options = DecryptOptions {
-            password: request.password,
-            keyfile_path: request.keyfile_path,
-            output_dir: request.output_dir,
+        let make_options = |password: String| DecryptOptions {
+            password,
+            keyfile_path: request.keyfile_path.clone(),
+            output_dir: request.output_dir.clone(),
             delete_source: request.delete_source,
         };
-        let mut result = OperationResult::from_result(
-            decrypt(&request.input_path, options),
-            "File decrypted successfully",
-        );
+
+        // Earlier GUI versions trimmed whitespace off the password, so a file
+        // encrypted here with a password like "secret " was really encrypted
+        // with "secret". Keep those files readable by retrying trimmed.
+        let trimmed_retry = (request.password != request.password.trim())
+            .then(|| make_options(request.password.trim().to_string()));
+        let options = make_options(request.password);
+
+        let mut outcome = decrypt(&request.input_path, options);
+        if let (Err(timenc::Error::DecryptionFailed), Some(retry)) = (&outcome, trimmed_retry) {
+            outcome = decrypt(&request.input_path, retry);
+        }
+        let mut result = OperationResult::from_result(outcome, "File decrypted successfully");
         if let (true, Some(version)) = (result.success, legacy_version) {
             result.message = format!(
                 "{} - but this file uses the old v{} format, which cannot detect a truncated \
