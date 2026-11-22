@@ -1,0 +1,35 @@
+[package]
+name = "timenc-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tar = "0.4"
+tempfile = "3"
+timenc = { path = ".." }
+
+# Not part of the main workspace: fuzzing needs a nightly toolchain.
+[workspace]
+
+[[bin]]
+name = "parse_headers"
+path = "fuzz_targets/parse_headers.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "v6_roundtrip"
+path = "fuzz_targets/v6_roundtrip.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decrypt_file"
+path = "fuzz_targets/decrypt_file.rs"
+test = false
+doc = false
