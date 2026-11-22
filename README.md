@@ -197,7 +197,7 @@ version bytes.
 Download the latest release for your platform:
 - **Windows**: `.exe` installer or portable executable
 - **macOS**: `.dmg` disk image
-- **Linux**: `.AppImage`, `.deb`, or `.flatpak` bundle
+- **Linux**: `.AppImage`, `.deb`, `.rpm` (Fedora, openSUSE, ...), or `.flatpak` bundle
 
 👉 **Download:** [https://github.com/SnowTimSwiss/TimENC/releases/latest](https://github.com/SnowTimSwiss/TimENC/releases/latest)
 

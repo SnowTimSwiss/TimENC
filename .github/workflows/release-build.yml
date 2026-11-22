@@ -22,25 +22,6 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo Registry
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Cache Tauri Target
-        uses: actions/cache@v5
-        with:
-          path: |
-            src-tauri/target
-          key: ${{ runner.os }}-tauri-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-tauri-
-
       - name: Install Tauri dependencies (Ubuntu 24.04)
         run: |
           sudo apt-get update
@@ -77,7 +58,7 @@ jobs:
       - name: Build Tauri Bundles
         run: |
           cd src-tauri
-          cargo tauri build --bundles appimage,deb
+          cargo tauri build --bundles appimage,deb,rpm
 
       - name: List Linux Bundles
         run: find src-tauri/target/release/bundle -maxdepth 2 -type f
@@ -88,6 +69,7 @@ jobs:
           files: |
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
 
   build-windows:
     runs-on: windows-latest
@@ -99,25 +81,6 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo Registry
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Cache Tauri Target
-        uses: actions/cache@v5
-        with:
-          path: |
-            src-tauri/target
-          key: ${{ runner.os }}-tauri-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-tauri-
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked
@@ -160,25 +123,6 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo Registry
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Cache Tauri Target
-        uses: actions/cache@v5
-        with:
-          path: |
-            src-tauri/target
-          key: ${{ runner.os }}-tauri-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-tauri-
-
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked
 
@@ -214,7 +158,10 @@ jobs:
         with:
           bundle: TimENC-${{ github.event.release.tag_name }}.flatpak
           manifest-path: flatpak/io.github.SnowTimSwiss.TimENC.yml
-          cache-key: flatpak-builder-${{ github.sha }}
+          # Everything goes straight to the release below; nothing is kept in
+          # GitHub Actions storage.
+          cache: false
+          upload-artifact: false
 
       - name: Upload Flatpak Asset
         uses: softprops/action-gh-release@v2
