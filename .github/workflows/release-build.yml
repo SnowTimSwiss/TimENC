@@ -44,7 +44,11 @@ jobs:
           cargo build --release --bin timenc
 
       - name: Install packaging tools
-        run: cargo install cargo-deb cargo-generate-rpm --locked
+        run: |
+          cargo install cargo-deb cargo-generate-rpm --locked
+          # appimagetool checks the desktop entry with it.
+          sudo apt-get update
+          sudo apt-get install -y desktop-file-utils
 
       - name: Build packages
         env:
@@ -87,7 +91,7 @@ jobs:
           mkdir -p dist
           exe="$(cygpath -w "$PWD/gui/target/release/timenc-gui.exe")"
           out="$(cygpath -w "$PWD/dist/TimENC_${VERSION}_x64-setup.exe")"
-          # NSIS is preinstalled on the Windows runners.
+          choco install nsis -y --no-progress
           "/c/Program Files (x86)/NSIS/makensis.exe" -V2 "-DVERSION=$VERSION" "-DEXE=$exe" "-DOUTFILE=$out" packaging/windows/installer.nsi
           cp gui/target/release/timenc-gui.exe "dist/TimENC-portable-${TAG}.exe"
           ls -la dist
