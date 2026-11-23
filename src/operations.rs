@@ -894,13 +894,27 @@ fn handle_decrypted_output(
         let safe_name = format::sanitize_output_name(&original_name)?;
         let target_path = output_dir.join(safe_name);
 
-        if target_path.exists() {
-            return Err(Error::FileExists {
-                path: target_path.to_string_lossy().to_string(),
-            });
-        }
+        let already_exists = || Error::FileExists {
+            path: target_path.to_string_lossy().to_string(),
+        };
 
-        fs::rename(temp_path, &target_path)?;
+        // A hard link fails if anything (a file, or a symlink planted in the
+        // meantime) already sits at the target, unlike a rename, which would
+        // silently replace it between an `exists()` check and the move.
+        match fs::hard_link(temp_path, &target_path) {
+            Ok(()) => {
+                fs::remove_file(temp_path)?;
+            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => return Err(already_exists()),
+            // File systems without hard links (FAT, some network shares):
+            // check first and rename.
+            Err(_) => {
+                if fs::symlink_metadata(&target_path).is_ok() {
+                    return Err(already_exists());
+                }
+                fs::rename(temp_path, &target_path)?;
+            }
+        }
         Ok(target_path)
     }
 }
