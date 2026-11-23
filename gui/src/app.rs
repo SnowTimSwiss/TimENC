@@ -3,9 +3,11 @@
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 
+#[cfg(target_os = "linux")]
+use eframe::egui::Theme;
 use eframe::egui::{
     self, vec2, Align, CentralPanel, Color32, Frame, Key, Layout, Margin, Panel, RichText,
-    ScrollArea, Theme, Ui,
+    ScrollArea, Ui,
 };
 use timenc::{DecryptOptions, EncryptOptions, KdfProfile};
 

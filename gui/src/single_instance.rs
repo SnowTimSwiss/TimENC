@@ -16,6 +16,7 @@ pub enum Startup {
     /// gets its own window, which still works).
     Primary(Option<Server>),
     /// Another instance has the request; exit.
+    #[cfg_attr(not(unix), allow(dead_code))]
     Forwarded,
 }
 
