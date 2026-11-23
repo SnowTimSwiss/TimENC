@@ -1,0 +1,41 @@
+[package]
+name = "timenc-gui"
+version = "3.2.0"
+description = "TimENC - Secure Encryption GUI"
+authors = ["TimENC Contributors"]
+license = "GPL-3.0"
+repository = "https://github.com/SnowTimSwiss/TimENC"
+edition = "2021"
+
+[[bin]]
+name = "timenc-gui"
+path = "src/main.rs"
+
+[dependencies]
+timenc = { path = ".." }
+eframe = { version = "0.37", default-features = false, features = ["glow", "wayland", "x11", "default_fonts", "accesskit", "clipboard"] }
+rfd = "0.18"
+zeroize = "1.7"
+# Already in the tree through rfd; runs a file dialog's future on a helper thread.
+pollster = "1"
+# Same version timenc uses; finds the config directory for the language setting.
+dirs = "5"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { version = "0.30", default-features = false, features = ["wayland-csd-adwaita"] }
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+# Argon2id and the AEAD are unusably slow unoptimised; optimise dependencies
+# (and lightly the crate itself) in debug builds too, as the main crate does.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
