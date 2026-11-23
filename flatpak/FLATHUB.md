@@ -74,11 +74,11 @@ https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo then.
 
 ## Likely reviewer questions
 
-- **`--filesystem=home`**: justified because encryption reads the input, writes
-  the `.timenc` output beside it, and securely deletes the original — sibling-file
-  operations the file-chooser portal does not cover. Be ready to explain this; if
-  reviewers insist, the fallback is `--filesystem=home` → document the rationale in
-  the PR description.
+- **`--filesystem=home`**: needed because encryption reads the input, writes
+  the `.timenc` output next to it, and can delete the original. The file-chooser
+  portal doesn't cover sibling files like that. Explain this in the PR
+  description; if reviewers push back, there is no narrower option that keeps
+  those features.
 - **Network**: the app needs none at runtime, and the build is offline. Good.
 - **Runtime version**: `org.freedesktop.Platform//25.08`. The GUI draws itself
   with OpenGL and needs no toolkit, so the small freedesktop runtime is enough.
