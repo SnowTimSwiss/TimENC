@@ -406,3 +406,20 @@ fn compressed_encryption_never_reports_a_changed_source() {
         assert!(fs::read(restored.join("text.txt")).unwrap() == text.as_bytes());
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn decrypting_never_replaces_a_dangling_symlink_at_the_target() {
+    let work = tempdir().unwrap();
+    let file = write_file(work.path(), "a.timenc", &build_v6(b"hello", "note.txt", false));
+    let out = work.path().join("out");
+    fs::create_dir(&out).unwrap();
+    // exists() is false for a dangling symlink, so a naive check-then-rename
+    // would replace it.
+    std::os::unix::fs::symlink(work.path().join("nowhere"), out.join("note.txt")).unwrap();
+
+    let result = decrypt(&file, options(&out));
+
+    assert!(matches!(result, Err(Error::FileExists { .. })), "{result:?}");
+    assert!(fs::symlink_metadata(out.join("note.txt")).unwrap().file_type().is_symlink());
+}

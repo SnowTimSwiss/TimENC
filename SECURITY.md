@@ -1,8 +1,30 @@
 # Security
 
-TimENC aims to be hard to misuse and hard to break, and to be honest about where
-that stops. This page describes what it protects, what it does not, what the
-last security review found, and how to report a problem.
+TimENC tries to be hard to misuse and hard to break, and to be honest about
+where that stops. This page says what it protects, what it doesn't, what the
+reviews found, and how to report a problem.
+
+## Challenge: try to break it
+
+Nobody outside the project has audited the design yet, so please try. There is
+no bounty, only credit in the release notes if you want it.
+
+**Counts as a break** (against files made by the current version, v6):
+
+* recovering plaintext, the file name or the folder structure without the
+  password and keyfile, or faster than guessing the password
+* modifying, truncating, reordering or extending a file without decryption
+  failing
+* making one file open under two different passwords with different content
+* making TimENC read or write outside the output folder, run out of memory
+  during parsing, or crash on a malformed file
+* finding a flaw in the Argon2id / subkey / commitment construction (the
+  format is described in the [README](README.md#file-format-v6) and
+  implemented in `src/format/mod.rs`)
+
+**Doesn't count:** guessing a weak password, malware or a debugger on the
+machine that runs TimENC, what the file system shows (name, size, timestamps),
+SSDs keeping old copies of a deleted source, and the limitations listed below.
 
 ## Reporting a vulnerability
 
@@ -31,7 +53,8 @@ compute for:
   guessable password. Use a long random passphrase, a keyfile, or both.
 * **A compromised machine.** Malware, a keylogger, or someone with a debugger
   on your account sees the password and plaintext. TimENC wipes secrets from its
-  own memory and disables core dumps, but it cannot defend a hostile host.
+  own memory and switches off core dumps (Unix; the command-line tool also
+  becomes non-dumpable on Linux), but it cannot defend a hostile host.
 * **What the file system shows.** The `.timenc` file's name, size (unless you
   use `--pad`), and timestamps are visible. Name it something neutral.
 * **Secure deletion.** `--delete-source` overwrites then removes the source, but
@@ -40,8 +63,30 @@ compute for:
 * **A sender who knows the password.** If someone gives you a `.timenc` file
   *and* its password, the archive is authentic by construction. TimENC refuses
   the dangerous archive tricks (see findings), but an extracted folder can still
-  contain symlinks that point anywhere, exactly as with `tar`. Treat extracted
+  contain symlinks that point anywhere, exactly as with `tar`, and a compressed
+  file or archive can expand to far more than its size on disk. Treat extracted
   folders from untrusted senders like any untrusted download.
+
+## Review of 4.0.0
+
+Version 4.0.0 swapped the Tauri/web front end for the egui GUI. The core
+crate and file format were not changed, so this pass re-read the file
+operations, the v6 format code, the command-line tool and the new GUI code
+(password buffer, worker thread, single-instance socket, file association
+handling), and re-ran the hostile-archive probes. Like the 3.1.0 review, it was
+done by the project itself, not by an independent third party.
+
+| # | Severity | Finding | Status |
+|---|----------|---------|--------|
+| 1 | Low | Decrypting a single file checked `exists()` and then renamed the temporary file into place. `exists()` is false for a dangling symlink and a rename replaces whatever is there, so something that appeared at the target in between (or a dangling symlink) was silently replaced. Needs write access to the output folder. | Fixed: the file is linked into place, which fails if anything is there; file systems without hard links fall back to a check and rename. Regression test added. |
+| 2 | Info | A sender who knows the password can send a zstd stream or tar archive that expands to a lot of data and fills the disk. | Documented, see limitations. |
+
+Checked and found fine: setuid/setgid bits in an archive are not applied, a
+directory entry below a planted symlink is refused, hard links, FIFOs and
+devices are refused, header parameters are bounded before any allocation, the
+GUI's single-instance socket only lives in the user's private runtime
+directory and only ever opens `.timenc` files, and the password buffer wipes
+what it replaces.
 
 ## Review of 3.1.0
 
@@ -101,12 +146,17 @@ in every mode.
 * **Decryption writes plaintext to a temporary file** next to the output before
   extracting, so the whole stream is authenticated first. On failure the file is
   unlinked, not wiped.
+* **No limit on the decompressed size.** Someone who knows the password can send
+  a file that expands to more than your disk holds. Decryption then fails with
+  an I/O error and the temporary file is removed.
 * **GUI passwords** are typed into a buffer that is wiped when it grows, when a
   character is deleted and after each operation, and the password fields keep
   no copies. Pressing "Show" lays the text out for display, and that copy sits
   in egui's text cache until it is evicted. The CLI's `-p` flag exposes the
   password in the process list.
 * **No `mlock`.** Keys can be swapped to disk unless swap is encrypted.
+* **Windows and macOS hardening is thinner.** Core dumps are switched off on
+  Unix only, and the non-dumpable flag is Linux only.
 * **No accepted advisories.** `cargo audit` warns that `zbus`'s `zvariant`
   crates and `ttf-parser` are unmaintained. `zbus` only talks to the user's own
   session bus (accessibility, theme portal); `ttf-parser` only reads the fonts
@@ -126,4 +176,4 @@ cargo +nightly fuzz run v6_roundtrip  -- -max_len=300000
 cargo +nightly fuzz run decrypt_file  -- -max_len=4096
 ```
 
-CI runs all of these on every push and weekly.
+CI runs the tests on Linux, Windows and macOS, and the audit and a short fuzz run on every push and weekly.

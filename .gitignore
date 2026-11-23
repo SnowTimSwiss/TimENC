@@ -24,39 +24,4 @@
 *-portable-*.exe
 *-Setup-*.exe
 
-# Old Python artifacts
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-develop-eggs/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-venv/
-env/
-ENV/
-.venv
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Legacy folder
-legacy/dist/
-legacy/build/
-
 .claude
