@@ -2,12 +2,15 @@
 Type=Application
 Name=TimENC
 GenericName=Secure Encryption Tool
+GenericName[de]=Sicheres Verschlüsselungswerkzeug
 Comment=Secure file encryption with ChaCha20-Poly1305 and Argon2id
-Exec=timenc %F
+Comment[de]=Sichere Dateiverschlüsselung mit ChaCha20-Poly1305 und Argon2id
+Exec=timenc-gui %F
 Icon=io.github.SnowTimSwiss.TimENC
 Terminal=false
 Categories=Utility;Security;
 Keywords=encryption;crypto;security;chacha20;argon2;
+Keywords[de]=Verschlüsselung;Krypto;Sicherheit;chacha20;argon2;
 MimeType=application/x-timenc;
 StartupNotify=true
-StartupWMClass=TimENC
+StartupWMClass=io.github.SnowTimSwiss.TimENC

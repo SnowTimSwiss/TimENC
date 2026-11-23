@@ -6,16 +6,17 @@ name: Flatpak
 
 on:
   push:
-    branches: [main]
     paths:
       - 'src/**'
-      - 'src-tauri/**'
+      - 'gui/**'
+      - 'packaging/**'
       - 'flatpak/**'
       - '.github/workflows/flatpak.yml'
   pull_request:
     paths:
       - 'src/**'
-      - 'src-tauri/**'
+      - 'gui/**'
+      - 'packaging/**'
       - 'flatpak/**'
       - '.github/workflows/flatpak.yml'
   workflow_dispatch:
@@ -25,7 +26,7 @@ jobs:
     name: Build from source
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
       options: --privileged
     steps:
       - name: Checkout repository
@@ -54,7 +55,7 @@ jobs:
           sudo apt-get install -y appstream desktop-file-utils
 
       - name: Validate AppStream metainfo
-        run: appstreamcli validate --no-net flatpak/io.github.SnowTimSwiss.TimENC.metainfo.xml
+        run: appstreamcli validate --no-net packaging/linux/io.github.SnowTimSwiss.TimENC.metainfo.xml
 
       - name: Validate desktop entry
-        run: desktop-file-validate flatpak/io.github.SnowTimSwiss.TimENC.desktop
+        run: desktop-file-validate packaging/linux/io.github.SnowTimSwiss.TimENC.desktop

@@ -2,15 +2,10 @@
 /target/
 **/*.rs.bk
 *.pdb
-# Only ignore the root library crate's lockfile; the Tauri app crate's
-# lockfile (src-tauri/Cargo.lock) is tracked for reproducible Flatpak builds.
+# Only ignore the root library crate's lockfile; the GUI crate's lockfile
+# (gui/Cargo.lock) is tracked for reproducible builds and the Flatpak vendoring.
 /Cargo.lock
-
-# Tauri
-src-tauri/target/
 **/target/
-# NOTE: src-tauri/Cargo.lock is intentionally tracked (see below) so the
-# Flatpak/Flathub build can vendor exact dependency versions offline.
 
 # IDE
 .idea/
@@ -24,6 +19,8 @@ src-tauri/target/
 *.AppImage
 *.deb
 *.dmg
+*.rpm
+*.flatpak
 *-portable-*.exe
 *-Setup-*.exe
 

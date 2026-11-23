@@ -1,12 +1,15 @@
 app-id: io.github.SnowTimSwiss.TimENC
-runtime: org.gnome.Platform
-runtime-version: '50'
-sdk: org.gnome.Sdk
+# The GUI draws itself with OpenGL and needs no toolkit, so the plain
+# freedesktop runtime is enough (the GNOME runtime was only needed for
+# WebKitGTK).
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
 # Rust toolchain is provided by an SDK extension rather than the build host,
 # so the build is fully reproducible inside the Flatpak sandbox.
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
-command: timenc
+command: timenc-gui
 
 finish-args:
   # Display
@@ -32,29 +35,25 @@ modules:
   - name: timenc
     buildsystem: simple
     build-commands:
-      # Build the Tauri binary from source, fully offline against vendored crates.
-      # The static HTML frontend is embedded by tauri-build, so no Node step.
-      - cargo --offline build --release --manifest-path src-tauri/Cargo.toml
-      # Real binary -> /app/bin/timenc-bin; the wrapper is launched as `timenc`
-      # so the WebKitGTK DMABUF workaround env var is always set.
-      - install -Dm755 src-tauri/target/release/timenc-tauri /app/bin/timenc-bin
-      - install -Dm755 flatpak/timenc-wrapper.sh /app/bin/timenc
+      # Build the GUI from source, fully offline against vendored crates.
+      - cargo --offline build --release --manifest-path gui/Cargo.toml
+      - install -Dm755 gui/target/release/timenc-gui /app/bin/timenc-gui
       # Desktop entry + AppStream metadata (named after the app-id, as Flatpak requires)
-      - install -Dm644 flatpak/io.github.SnowTimSwiss.TimENC.desktop /app/share/applications/io.github.SnowTimSwiss.TimENC.desktop
-      - install -Dm644 flatpak/io.github.SnowTimSwiss.TimENC.metainfo.xml /app/share/metainfo/io.github.SnowTimSwiss.TimENC.metainfo.xml
+      - install -Dm644 packaging/linux/io.github.SnowTimSwiss.TimENC.desktop /app/share/applications/io.github.SnowTimSwiss.TimENC.desktop
+      - install -Dm644 packaging/linux/io.github.SnowTimSwiss.TimENC.metainfo.xml /app/share/metainfo/io.github.SnowTimSwiss.TimENC.metainfo.xml
       # MIME type for *.timenc (named after the app-id so Flatpak exports it),
       # without which the desktop never associates the files with TimENC
-      - install -Dm644 src-tauri/packaging/timenc-mime.xml /app/share/mime/packages/io.github.SnowTimSwiss.TimENC.xml
+      - install -Dm644 packaging/linux/timenc-mime.xml /app/share/mime/packages/io.github.SnowTimSwiss.TimENC.xml
       # Icons into the hicolor theme, renamed to the app-id
-      - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/io.github.SnowTimSwiss.TimENC.png
-      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/io.github.SnowTimSwiss.TimENC.png
-      - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/256x256/apps/io.github.SnowTimSwiss.TimENC.png
+      - install -Dm644 packaging/icons/32x32.png /app/share/icons/hicolor/32x32/apps/io.github.SnowTimSwiss.TimENC.png
+      - install -Dm644 packaging/icons/128x128.png /app/share/icons/hicolor/128x128/apps/io.github.SnowTimSwiss.TimENC.png
+      - install -Dm644 packaging/icons/128x128@2x.png /app/share/icons/hicolor/256x256/apps/io.github.SnowTimSwiss.TimENC.png
     sources:
       # For CI and local builds this copies the working checkout. For the Flathub
       # submission, replace this block with a pinned git source (see
       # flatpak/FLATHUB.md) -- Flathub requires type: git with tag + commit.
       - type: dir
         path: ..
-      # Vendored Cargo registry generated from src-tauri/Cargo.lock via
-      # flatpak-cargo-generator.py. Regenerate after any dependency change.
+      # Vendored Cargo registry generated from gui/Cargo.lock by
+      # flatpak/generate-cargo-sources.py. Regenerate after any dependency change.
       - cargo-sources.json

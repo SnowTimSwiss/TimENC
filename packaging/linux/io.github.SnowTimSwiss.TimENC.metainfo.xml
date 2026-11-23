@@ -21,7 +21,7 @@
     <ul>
       <li>ChaCha20-Poly1305 authenticated encryption</li>
       <li>Argon2id password-based key derivation</li>
-      <li>Simple, cross-platform graphical interface</li>
+      <li>Simple, fast native interface that follows the system light/dark setting</li>
     </ul>
   </description>
 
@@ -40,6 +40,18 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="3.3.0" date="2026-11-23">
+      <description>
+        <p>A new, much lighter interface.</p>
+        <ul>
+          <li>The window is now drawn natively instead of in an embedded web browser: it opens faster, uses far less memory and no CPU while idle, and the downloads are much smaller.</li>
+          <li>No web engine means much less code that could be attacked.</li>
+          <li>Passwords are kept in memory that is wiped as soon as they are no longer needed.</li>
+          <li>The whole window, not just the title bar, follows the system light/dark setting.</li>
+          <li>Opening a .timenc file while TimENC is already open hands it to the open window.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.0" date="2026-11-22">
       <description>
         <p>Security hardening and faster encryption.</p>

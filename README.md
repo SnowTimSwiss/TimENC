@@ -1,6 +1,6 @@
 # TimENC 🔐
 
-**TimENC** is a modern, cross-platform encryption tool built with Rust and Tauri.
+**TimENC** is a modern, cross-platform encryption tool built with Rust, with a small native interface (egui).
 It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation for strong, authenticated encryption - designed to be secure, simple, and open-source.
 
 ![TimENC encrypting a file](Images/Screenshot-Encrypt.png)
@@ -27,7 +27,7 @@ It uses **ChaCha20-Poly1305 AEAD** encryption and **Argon2id** key derivation fo
 * **No plaintext temp files** - folders and compressed payloads are streamed straight into the encryptor
 * **Never overwrites** an existing file, and never leaves a half-written `.timenc` behind
 * **Best-effort overwrite before deleting source files** (when deletion is enabled)
-* **Cross-platform desktop GUI (Tauri)**
+* **Light native desktop GUI** - no embedded web browser, ~12 MB, no CPU while idle
 * **Cross-platform**: Windows, macOS, Linux
 
 ---
@@ -249,54 +249,43 @@ Environment: `TIMENC_THREADS=<n>` limits the number of worker threads (default: 
 
 ## 🖥️ GUI Features
 
-* **Modern dark theme** inspired by GitHub Dark
+* **Native and light:** drawn with [egui](https://github.com/emilk/egui), with no
+  embedded web browser or JavaScript engine. A ~12 MB program that opens in a
+  fraction of a second and uses no CPU while idle.
+* **Follows the system light/dark setting**, title bar included (on Linux via the
+  XDG portal; `TIMENC_THEME=light` or `dark` overrides it)
+* **Passwords are wiped from memory** after each operation; the password fields
+  never copy what you type
 * **Drag & drop** support for files
 * **Password strength indicator** and a **repeat-password field** so a typo cannot lock you out
 * **Keyfile generator** built-in
-* **Progress feedback** with detailed status messages
-* **Native file dialogs** for secure file selection
-
-### New native GUI (egui, in testing)
-
-`gui/` holds a second GUI with the same pages and features, drawn with
-[egui](https://github.com/emilk/egui) instead of a web view. It is meant to
-replace the Tauri app once it has been tested on real desktops:
-
-* **No web view, no JavaScript engine:** WebKitGTK/WebView2 and the IPC bridge
-  are gone, which takes a large piece of code out of the attack surface.
-* **Light:** ~12 MB binary, opens in well under a second, uses no CPU while idle,
-  and needs no system packages to build.
-* **Passwords stay wiped:** the password fields edit a buffer that is zeroed
-  when it grows, when characters are deleted and after each operation. The web
-  view kept passwords in JavaScript strings that cannot be wiped.
-* Follows the desktop's light/dark setting, title bar included (Linux via
-  the XDG portal; `TIMENC_THEME=light|dark` overrides it).
-* A second launch hands its `.timenc` file to the open window (Linux).
-
-```bash
-cd gui && cargo run --release
-```
+* **Native file dialogs** (the XDG portal on Linux, so they work in Flatpak too)
+* **Open with TimENC:** double-clicking a `.timenc` file opens it; on Linux a
+  second file goes to the window that is already open
+* **English and German**
 
 ---
 
 ## 🛠️ Building from Source
 
-You need a [Rust toolchain](https://rustup.rs/) and the
-[Tauri CLI](https://tauri.app/) (`cargo install tauri-cli --locked`).
-On Linux, install the Tauri system dependencies (WebKitGTK, GTK, etc.) for your
-distribution first.
+You only need a [Rust toolchain](https://rustup.rs/). No system packages are
+required to build: X11, Wayland and OpenGL are loaded at run time.
 
 ```bash
 # Clone
 git clone https://github.com/SnowTimSwiss/TimENC.git
 cd TimENC
 
-# Run the GUI in development
-cd src-tauri && cargo tauri dev
+# Run the GUI
+cd gui && cargo run --release
 
-# Build release bundles for your platform
-cargo tauri build
+# The command-line tool (from the repository root)
+cargo build --release
 ```
+
+Packages are built by `.github/workflows/release-build.yml` with the scripts in
+`packaging/` (`cargo deb` and `cargo generate-rpm` in `gui/`, an AppImage, a
+macOS disk image and an NSIS installer for Windows).
 
 ### Testing
 
@@ -306,6 +295,7 @@ corruption, truncation and hostile-archive cases:
 ```bash
 cargo test
 cargo clippy --all-targets -- -D warnings
+(cd gui && cargo test && cargo clippy --all-targets -- -D warnings)
 ```
 
 Fuzz targets and the dependency audit are described in [SECURITY.md](SECURITY.md),
