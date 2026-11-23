@@ -1,10 +1,7 @@
 # Advisories reviewed and accepted. Everything else fails `cargo audit`.
+#
+# None at the moment. (The quick-xml advisories accepted for the Tauri build
+# went away with Tauri.) `cargo audit` also lists a few crates as unmaintained;
+# those are warnings, reviewed in SECURITY.md, and do not fail the check.
 [advisories]
-ignore = [
-    # quick-xml 0.38 is pulled in by `plist`, which Tauri uses at build time to
-    # read the Info.plist it generated itself and, on macOS, to bundle. It never
-    # parses data from a .timenc file or from the user. `plist` pins ^0.38, so
-    # there is no compatible fix until a plist release moves to quick-xml >= 0.41.
-    "RUSTSEC-2026-0194", # quadratic run time on duplicate attribute check
-    "RUSTSEC-2026-0195", # unbounded namespace-declaration allocation
-]
+ignore = []

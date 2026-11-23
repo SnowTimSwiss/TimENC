@@ -101,18 +101,23 @@ in every mode.
 * **Decryption writes plaintext to a temporary file** next to the output before
   extracting, so the whole stream is authenticated first. On failure the file is
   unlinked, not wiped.
-* **The GUI password lives in the webview** while you type it and cannot be
-  zeroed from Rust. The CLI's `-p` flag exposes it in the process list.
+* **GUI passwords** are typed into a buffer that is wiped when it grows, when a
+  character is deleted and after each operation, and the password fields keep
+  no copies. Pressing "Show" lays the text out for display, and that copy sits
+  in egui's text cache until it is evicted. The CLI's `-p` flag exposes the
+  password in the process list.
 * **No `mlock`.** Keys can be swapped to disk unless swap is encrypted.
-* **Accepted advisories**: RUSTSEC-2026-0194 and -0195 (`quick-xml` via `plist`,
-  build-time parsing of a file Tauri generated itself). See `.cargo/audit.toml`.
+* **No accepted advisories.** `cargo audit` warns that `zbus`'s `zvariant`
+  crates and `ttf-parser` are unmaintained. `zbus` only talks to the user's own
+  session bus (accessibility, theme portal); `ttf-parser` only reads the fonts
+  compiled into the program. Neither sees data from a `.timenc` file.
 
 ## Checking it yourself
 
 ```bash
 cargo test                                      # unit, integration, hostile-input tests
 cargo clippy --all-targets -- -D warnings
-cargo audit --file src-tauri/Cargo.lock         # dependency advisories
+cargo audit --file gui/Cargo.lock               # dependency advisories
 
 # Fuzzing (needs a nightly toolchain and `cargo install cargo-fuzz`)
 cd fuzz

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates flatpak/cargo-sources.json from src-tauri/Cargo.lock.
+"""Generates flatpak/cargo-sources.json from gui/Cargo.lock.
 
 Usage: generate-cargo-sources.py <Cargo.lock> <existing cargo-sources.json>
 

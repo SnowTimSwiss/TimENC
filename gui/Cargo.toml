@@ -1,6 +1,6 @@
 [package]
 name = "timenc-gui"
-version = "3.2.0"
+version = "3.3.0"
 description = "TimENC - Secure Encryption GUI"
 authors = ["TimENC Contributors"]
 license = "GPL-3.0"
@@ -24,6 +24,63 @@ dirs = "5"
 [target.'cfg(target_os = "linux")'.dependencies]
 winit = { version = "0.30", default-features = false, features = ["wayland-csd-adwaita"] }
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+
+[target.'cfg(windows)'.build-dependencies]
+# Embeds the icon and version information into TimENC.exe.
+winresource = "0.1"
+
+# ----- Linux packages ----------------------------------------------------
+# Both packages carry the GUI and the command-line tool. The package names are
+# the ones the Tauri-built packages used, so installing this upgrades them.
+# Build the CLI first: `cargo build --release` in the repository root.
+
+[package.metadata.deb]
+name = "tim-enc"
+maintainer = "TimENC Contributors"
+copyright = "2024-2026, TimENC Contributors"
+license-file = ["../LICENSE", "4"]
+extended-description = """\
+TimENC encrypts files and folders with ChaCha20-Poly1305 and Argon2id. \
+It has a small native interface and a command-line tool (timenc)."""
+section = "utils"
+priority = "optional"
+# OpenGL/EGL and xkbcommon are loaded at run time, so they are not found
+# automatically; X11 and Wayland support is loaded when that session is used.
+depends = "$auto, libegl1, libgl1, libxkbcommon0"
+recommends = "libxkbcommon-x11-0, libwayland-client0, libwayland-egl1, libwayland-cursor0, xdg-desktop-portal"
+assets = [
+    ["target/release/timenc-gui", "usr/bin/", "755"],
+    ["../target/release/timenc", "usr/bin/", "755"],
+    ["../packaging/linux/io.github.SnowTimSwiss.TimENC.desktop", "usr/share/applications/", "644"],
+    ["../packaging/linux/io.github.SnowTimSwiss.TimENC.metainfo.xml", "usr/share/metainfo/", "644"],
+    ["../packaging/linux/timenc-mime.xml", "usr/share/mime/packages/io.github.SnowTimSwiss.TimENC.xml", "644"],
+    ["../packaging/icons/32x32.png", "usr/share/icons/hicolor/32x32/apps/io.github.SnowTimSwiss.TimENC.png", "644"],
+    ["../packaging/icons/128x128.png", "usr/share/icons/hicolor/128x128/apps/io.github.SnowTimSwiss.TimENC.png", "644"],
+    ["../packaging/icons/128x128@2x.png", "usr/share/icons/hicolor/256x256/apps/io.github.SnowTimSwiss.TimENC.png", "644"],
+    ["../README.md", "usr/share/doc/tim-enc/", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "TimENC"
+summary = "Secure file encryption with ChaCha20-Poly1305 and Argon2id"
+license = "GPL-3.0-only"
+assets = [
+    { source = "target/release/timenc-gui", dest = "/usr/bin/timenc-gui", mode = "755" },
+    { source = "../target/release/timenc", dest = "/usr/bin/timenc", mode = "755" },
+    { source = "../packaging/linux/io.github.SnowTimSwiss.TimENC.desktop", dest = "/usr/share/applications/io.github.SnowTimSwiss.TimENC.desktop", mode = "644" },
+    { source = "../packaging/linux/io.github.SnowTimSwiss.TimENC.metainfo.xml", dest = "/usr/share/metainfo/io.github.SnowTimSwiss.TimENC.metainfo.xml", mode = "644" },
+    { source = "../packaging/linux/timenc-mime.xml", dest = "/usr/share/mime/packages/io.github.SnowTimSwiss.TimENC.xml", mode = "644" },
+    { source = "../packaging/icons/32x32.png", dest = "/usr/share/icons/hicolor/32x32/apps/io.github.SnowTimSwiss.TimENC.png", mode = "644" },
+    { source = "../packaging/icons/128x128.png", dest = "/usr/share/icons/hicolor/128x128/apps/io.github.SnowTimSwiss.TimENC.png", mode = "644" },
+    { source = "../packaging/icons/128x128@2x.png", dest = "/usr/share/icons/hicolor/256x256/apps/io.github.SnowTimSwiss.TimENC.png", mode = "644" },
+    { source = "../README.md", dest = "/usr/share/doc/TimENC/README.md", mode = "644", doc = true },
+]
+# Capabilities rather than package names, so the same package works on
+# Fedora, openSUSE and others. All three are loaded at run time.
+[package.metadata.generate-rpm.requires]
+"libEGL.so.1()(64bit)" = "*"
+"libGL.so.1()(64bit)" = "*"
+"libxkbcommon.so.0()(64bit)" = "*"
 
 [profile.release]
 opt-level = 3
