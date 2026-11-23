@@ -40,9 +40,9 @@
   <content_rating type="oars-1.1" />
 
   <releases>
-    <release version="3.3.0" date="2026-11-23">
+    <release version="4.0.0" date="2026-11-23">
       <description>
-        <p>A new, much lighter interface.</p>
+        <p>A new, much lighter interface. All .timenc files stay compatible, in both directions.</p>
         <ul>
           <li>The window is now drawn natively instead of in an embedded web browser: it opens faster, uses far less memory and no CPU while idle, and the downloads are much smaller.</li>
           <li>No web engine means much less code that could be attacked.</li>

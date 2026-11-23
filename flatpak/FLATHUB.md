@@ -37,8 +37,8 @@ Flathub repo, replace that `type: dir` block with:
     sources:
       - type: git
         url: https://github.com/SnowTimSwiss/TimENC.git
-        tag: v3.3.0
-        commit: <full-40-char-sha-of-the-v3.3.0-tag>
+        tag: v4.0.0
+        commit: <full-40-char-sha-of-the-v4.0.0-tag>
       - cargo-sources.json
 ```
 
@@ -46,7 +46,7 @@ Everything else stays identical.
 
 ## Submission steps
 
-1. **Tag a release** on GitHub (e.g. `v3.3.0`) and note the commit SHA.
+1. **Tag a release** on GitHub (e.g. `v4.0.0`) and note the commit SHA.
 2. **Fork** https://github.com/flathub/flathub and create a branch named exactly
    `io.github.SnowTimSwiss.TimENC` (new-app submissions use a branch, not `master`).
 3. Copy into the fork root:

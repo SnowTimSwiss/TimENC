@@ -3216,7 +3216,7 @@ dependencies = [
 
 [[package]]
 name = "timenc"
-version = "3.3.0"
+version = "4.0.0"
 dependencies = [
  "argon2",
  "blake2",
@@ -3236,7 +3236,7 @@ dependencies = [
 
 [[package]]
 name = "timenc-gui"
-version = "3.3.0"
+version = "4.0.0"
 dependencies = [
  "dirs",
  "eframe",

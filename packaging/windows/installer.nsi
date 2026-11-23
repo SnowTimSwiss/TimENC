@@ -1,6 +1,6 @@
 ; TimENC installer for Windows.
 ;
-; Build: makensis /DVERSION=3.3.0 /DEXE=path\to\timenc-gui.exe /DOUTFILE=TimENC_3.3.0_x64-setup.exe installer.nsi
+; Build: makensis /DVERSION=4.0.0 /DEXE=path\to\timenc-gui.exe /DOUTFILE=TimENC_4.0.0_x64-setup.exe installer.nsi
 ;
 ; Installs for the current user only (no administrator prompt), into the same
 ; folder and under the same uninstall entry as the earlier Tauri-built
