@@ -256,6 +256,27 @@ Environment: `TIMENC_THREADS=<n>` limits the number of worker threads (default: 
 * **Progress feedback** with detailed status messages
 * **Native file dialogs** for secure file selection
 
+### New native GUI (egui, in testing)
+
+`gui/` holds a second GUI with the same pages and features, drawn with
+[egui](https://github.com/emilk/egui) instead of a web view. It is meant to
+replace the Tauri app once it has been tested on real desktops:
+
+* **No web view, no JavaScript engine:** WebKitGTK/WebView2 and the IPC bridge
+  are gone, which takes a large piece of code out of the attack surface.
+* **Light:** ~12 MB binary, opens in well under a second, uses no CPU while idle,
+  and needs no system packages to build.
+* **Passwords stay wiped:** the password fields edit a buffer that is zeroed
+  when it grows, when characters are deleted and after each operation. The web
+  view kept passwords in JavaScript strings that cannot be wiped.
+* Follows the desktop's light/dark setting, title bar included (Linux via
+  the XDG portal; `TIMENC_THEME=light|dark` overrides it).
+* A second launch hands its `.timenc` file to the open window (Linux).
+
+```bash
+cd gui && cargo run --release
+```
+
 ---
 
 ## 🛠️ Building from Source
